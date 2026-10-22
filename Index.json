@@ -1,11 +1,12 @@
 {
+  "external_sources": [],
   "category:modules": [
     {
-      "id": "soundcloud-direct",
+      "id": "soundcloud",
       "name": "SoundCloud",
       "pkg": "com.fouadalobaidi-bit.soundcloud",
       "file": "Soundcloud.8spine",
-      "download": "https://raw.githubusercontent.com/fouadalobaidi-bit/Soundcloud-module/main/Soundcloud.8spine",
+      "download": "Soundcloud.8spine",
       "version": "1.0.0",
       "code": 100,
       "type": "MODULE",
@@ -21,7 +22,7 @@
         {
           "name": "SoundCloud",
           "lang": "all",
-          "id": "soundcloud-direct",
+          "id": "soundcloud",
           "baseUrl": "."
         }
       ]
