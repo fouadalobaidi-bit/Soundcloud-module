@@ -1,17 +1,17 @@
 {
   "category:modules": [
     {
-      "id": "soundcloud",
+      "id": "soundcloud-direct",
       "name": "SoundCloud",
       "pkg": "com.fouadalobaidi-bit.soundcloud",
-      "file": "Soundcloud.js",
-      "download": "https://raw.githubusercontent.com/fouadalobaidi-bit/Soundcloud-module/main/Soundcloud.js",
+      "file": "Soundcloud.8spine",
+      "download": "https://raw.githubusercontent.com/fouadalobaidi-bit/Soundcloud-module/main/Soundcloud.8spine",
       "version": "1.0.0",
       "code": 100,
       "type": "MODULE",
       "author": "fouadalobaidi-bit",
       "description": "البحث وتشغيل الموسيقى من SoundCloud.",
-      "tags": [],
+      "tags": ["SOUNDCLOUD", "AUDIO"],
       "featured": false,
       "trusted": false,
       "nsfw": false,
@@ -21,7 +21,7 @@
         {
           "name": "SoundCloud",
           "lang": "all",
-          "id": "soundcloud",
+          "id": "soundcloud-direct",
           "baseUrl": "."
         }
       ]
