@@ -45,7 +45,7 @@ const SoundCloudModule = {
     type: "MUSIC",
     sources: [{ id: "soundcloud", name: "SoundCloud", lang: "all", baseUrl: "https://soundcloud.com" }],
 
-    search: async function (query, limit, offset) {
+    searchTracks: async function(query, limit = 10) {
         try {
             const data = await scGet('/search/tracks', {
                 q: query, limit: limit || 10, offset: offset || 0, linked_partitioning: 1
