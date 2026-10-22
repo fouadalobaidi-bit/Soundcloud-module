@@ -3,11 +3,28 @@
     {
       "id": "soundcloud",
       "name": "SoundCloud",
-      "author": "fouadalobaidi-bit",
+      "pkg": "com.fouadalobaidi-bit.soundcloud",
+      "file": "Soundcloud.js",
+      "download": "https://raw.githubusercontent.com/fouadalobaidi-bit/Soundcloud-module/main/Soundcloud.js",
       "version": "1.0.0",
+      "code": 100,
+      "type": "MODULE",
+      "author": "fouadalobaidi-bit",
       "description": "البحث وتشغيل الموسيقى من SoundCloud.",
-      "downloadURL": "https://raw.githubusercontent.com/fouadalobaidi-bit/Soundcloud-module/main/Soundcloud.js",
-      "icon": "https://cdn-icons-png.flaticon.com/512/145/145809.png"
+      "tags": [],
+      "featured": false,
+      "trusted": false,
+      "nsfw": false,
+      "lang": "all",
+      "folder": "modules",
+      "sources": [
+        {
+          "name": "SoundCloud",
+          "lang": "all",
+          "id": "soundcloud",
+          "baseUrl": "."
+        }
+      ]
     }
   ]
 }
