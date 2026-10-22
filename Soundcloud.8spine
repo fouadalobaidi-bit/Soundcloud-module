@@ -45,7 +45,38 @@ const SoundCloudModule = {
     type: "MUSIC",
     sources: [{ id: "soundcloud", name: "SoundCloud", lang: "all", baseUrl: "https://soundcloud.com" }],
 
-    searchTracks: async function(query, limit = 10) {
+    search: async function (query, limit, offset) {
+    const dbg = function (msg) {
+        return [{ id: 'debug', title: 'DEBUG: ' + msg, artist: 'soundcloud-module', duration: 0, artwork: null, streamUrl: null }];
+    };
+    try {
+        const q = typeof query === 'string' ? query : JSON.stringify(query);
+        const lim = Number(limit) > 0 ? Number(limit) : 10;
+        const off = Number(offset) >= 0 ? Number(offset) : 0;
+        const data = await scGet('/search/tracks', { q: q, limit: lim, offset: off, linked_partitioning: 1 });
+        const items = data.collection || [];
+        const out = items
+            .filter(function (t) { return t.streamable !== false && t.policy !== 'BLOCK' && t.policy !== 'SNIP'; })
+            .map(function (t) {
+                const art = t.artwork_url || (t.user && t.user.avatar_url) || '';
+                return {
+                    id: String(t.id),
+                    title: t.title,
+                    artist: t.user ? t.user.username : 'Unknown Artist',
+                    duration: t.duration ? t.duration / 1000 : 0,
+                    artwork: art ? art.replace('-large', '-t500x500') : null,
+                    streamUrl: null
+                };
+            });
+        if (!out.length) {
+            return dbg('raw=' + items.length + ' q=' + q + ' args=' + typeof query + ',' + typeof limit + ',' + typeof offset);
+        }
+        return out;
+    } catch (e) {
+        return dbg(String((e && e.message) || e));
+    }
+},
+
         try {
             const data = await scGet('/search/tracks', {
                 q: query, limit: limit || 10, offset: offset || 0, linked_partitioning: 1
