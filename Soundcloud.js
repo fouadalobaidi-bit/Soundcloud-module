@@ -13,7 +13,11 @@ const HEADERS = {
 };
 
 const SoundCloudModule = {
+    id: "soundcloud",
     name: "SoundCloud",
+    source: "soundcloud",
+    baseUrl: "https://soundcloud.com",
+    type: "MUSIC",
 
     // دالة البحث
     search: async function(query, limit = 10) {
