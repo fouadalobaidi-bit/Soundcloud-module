@@ -81,4 +81,4 @@ const SoundCloudModule = {
 // تصدير الموديول
 // إرجاع الكائن مباشرة لبيئة التطبيق
 SoundCloudModule;
-}
+
