@@ -11,8 +11,7 @@
       "version": "1.0.0",
       "author": "fouadalobaidi-bit",
       "description": "مصدر موسيقى من SoundCloud.",
-      "icon": "https://raw.githubusercontent.com/fouadalobaidi-bit/soundcloud-module/main/icon.png",
-      "downloadURL": "https://raw.githubusercontent.com/fouadalobaidi-bit/soundcloud-module/main/soundcloud.js"
+      "downloadURL": "https://raw.githubusercontent.com/fouadalobaidi-bit/Soundcloud-module/main/Soundcloud.js"
     }
   ]
 }
