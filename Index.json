@@ -6,7 +6,7 @@
       "author": "fouadalobaidi-bit",
       "version": "1.0.0",
       "description": "البحث وتشغيل الموسيقى من SoundCloud.",
-      "url": "https://raw.githubusercontent.com/fouadalobaidi-bit/Soundcloud-module/main/Soundcloud.js",
+      "downloadURL": "https://raw.githubusercontent.com/fouadalobaidi-bit/Soundcloud-module/main/Soundcloud.js",
       "icon": "https://cdn-icons-png.flaticon.com/512/145/145809.png"
     }
   ]
