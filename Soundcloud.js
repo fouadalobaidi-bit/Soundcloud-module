@@ -1,33 +1,46 @@
 /**
- * SoundCloud Module for 8SPINE - Vanilla JS Version
+ * SoundCloud Module for 8SPINE - Vanilla JS Version (with Client ID)
  */
 
-const SC_CLIENT_ID = 'YOUR_CLIENT_ID_HERE'; // ملاحظة: ستحتاج جلب client_id حقيقي ليعمل البحث
+// معرف العميل (Client ID) الاحتياطي الذي تم الحصول عليه
+const SC_CLIENT_ID = 'iFagfuAuwkp6GbI6M6rA7UMw4LOdqC95';
+
+// رؤوس الطلبات (Headers) لمحاكاة المتصفح وتجنب الحظر
+const HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    'Accept': 'application/json',
+    'Referer': 'https://soundcloud.com/'
+};
 
 const SoundCloudModule = {
     name: "SoundCloud",
-    
+
     // دالة البحث
     search: async function(query, limit = 10) {
         try {
-            // هنا نستخدم API الخاص بـ SoundCloud
-            const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${SC_CLIENT_ID}&limit=${limit}`;
-            const response = await fetch(url);
+            // البحث باستخدام API v2 مع تمرير الـ client_id
+            const url = `https://api-v2.soundcloud.com/search?q=${encodeURIComponent(query)}&client_id=${SC_CLIENT_ID}&limit=${limit}&linked_partitioning=1`;
+            
+            const response = await fetch(url, { headers: HEADERS });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
             const data = await response.json();
-
             if (!data.collection) return [];
 
-            // تحويل النتائج لتنسيق التطبيق
-            return data.collection.map(track => ({
+            // تصفية النتائج لاستخراج المسارات (Tracks) فقط
+            const tracks = data.collection.filter(item => item.kind === 'track');
+
+            // تحويل النتائج إلى التنسيق المطلوب
+            return tracks.map(track => ({
                 id: track.id.toString(),
                 title: track.title,
-                artist: track.user ? track.user.username : 'Unknown',
-                duration: track.duration / 1000, // تحويل الملي ثانية إلى ثواني
+                artist: track.user ? track.user.username : 'Unknown Artist',
+                duration: track.duration ? track.duration / 1000 : 0, // تحويل الميلي ثانية إلى ثواني
                 artwork: track.artwork_url ? track.artwork_url.replace('-large', '-t500x500') : null,
-                streamUrl: null
+                streamUrl: null // سيتم جلبها لاحقًا
             }));
         } catch (error) {
-            console.error("Search error:", error);
+            console.error("[SoundCloud] Search error:", error);
             return [];
         }
     },
@@ -35,29 +48,37 @@ const SoundCloudModule = {
     // دالة جلب رابط البث
     getStreamUrl: async function(trackId) {
         try {
-            // جلب بيانات المسار للحصول على رابط البث
+            // 1. جلب تفاصيل المسار للحصول على قائمة الترميزات (transcodings)
             const trackUrl = `https://api-v2.soundcloud.com/tracks/${trackId}?client_id=${SC_CLIENT_ID}`;
-            const response = await fetch(trackUrl);
-            const data = await response.json();
-
-            if (data.media && data.media.transcodings) {
-                // البحث عن جودة عالية
-                const streamInfo = data.media.transcodings.find(t => t.format.protocol === 'progressive' || t.format.mime_type === 'audio/mpeg');
+            const trackResponse = await fetch(trackUrl, { headers: HEADERS });
+            if (!trackResponse.ok) throw new Error(`HTTP error! status: ${trackResponse.status}`);
+            
+            const trackData = await trackResponse.json();
+            
+            // 2. البحث عن ترميز "progressive" (ملف MP3 مباشر)
+            if (trackData.media && trackData.media.transcodings) {
+                const streamInfo = trackData.media.transcodings.find(
+                    t => t.format.protocol === 'progressive' || t.format.mime_type === 'audio/mpeg'
+                );
+                
                 if (streamInfo) {
-                    const streamResponse = await fetch(`${streamInfo.url}?client_id=${SC_CLIENT_ID}`);
+                    // 3. طلب رابط البث النهائي من رابط الترميز
+                    const streamResponse = await fetch(`${streamInfo.url}?client_id=${SC_CLIENT_ID}`, { headers: HEADERS });
+                    if (!streamResponse.ok) throw new Error(`HTTP error! status: ${streamResponse.status}`);
+                    
                     const streamData = await streamResponse.json();
-                    return streamData.url;
+                    return streamData.url; // هذا هو رابط الـ MP3 المباشر
                 }
             }
-            return null;
+            return null; // لا يوجد ترميز متاح
         } catch (error) {
-            console.error("Stream error:", error);
+            console.error("[SoundCloud] Stream error:", error);
             return null;
         }
     }
 };
 
-// تصدير الموديول (قد يختلف حسب طريقة التطبيق)
+// تصدير الموديول
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = SoundCloudModule;
 }
