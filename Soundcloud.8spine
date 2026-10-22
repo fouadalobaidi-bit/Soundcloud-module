@@ -1,90 +1,95 @@
-/**
- * SoundCloud Module for 8SPINE
- */
-
-const SC_CLIENT_ID = 'iFagfuAuwkp6GbI6M6rA7UMw4LOdqC95';
-
+const API = 'https://api-v2.soundcloud.com';
 const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-    'Accept': 'application/json',
-    'Referer': 'https://soundcloud.com/'
+    'Accept': 'application/json'
 };
+let clientId = null;
+
+function qs(params) {
+    return Object.keys(params)
+        .filter(function (k) { return params[k] !== undefined && params[k] !== null; })
+        .map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); })
+        .join('&');
+}
+
+async function fetchClientId() {
+    const html = await (await fetch('https://soundcloud.com', { headers: HEADERS })).text();
+    const scripts = (html.match(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js/g) || []).reverse();
+    for (const src of scripts) {
+        const js = await (await fetch(src, { headers: HEADERS })).text();
+        const m = js.match(/client_id\s*[:=]\s*"([a-zA-Z0-9]{32})"/);
+        if (m) return m[1];
+    }
+    throw new Error('client_id not found');
+}
+
+async function scGet(path, params, retried) {
+    if (!clientId) clientId = await fetchClientId();
+    const url = API + path + '?' + qs(Object.assign({}, params || {}, { client_id: clientId }));
+    const res = await fetch(url, { headers: HEADERS });
+    if ((res.status === 401 || res.status === 403) && !retried) {
+        clientId = null;
+        return scGet(path, params, true);
+    }
+    if (!res.ok) throw new Error('SoundCloud HTTP ' + res.status);
+    return res.json();
+}
 
 const SoundCloudModule = {
     id: "soundcloud",
     name: "SoundCloud",
-    version: "1.0.0",
+    version: "1.0.1",
     author: "fouadalobaidi-bit",
     description: "البحث وتشغيل الموسيقى من SoundCloud.",
     baseUrl: "https://soundcloud.com",
     type: "MUSIC",
-    
-    // هذا الجزء مهم جداً عشان يتعرف التطبيق على السورس
-    sources: [
-        {
-            id: "soundcloud",
-            name: "SoundCloud",
-            lang: "all",
-            baseUrl: "https://soundcloud.com"
-        }
-    ],
+    sources: [{ id: "soundcloud", name: "SoundCloud", lang: "all", baseUrl: "https://soundcloud.com" }],
 
-    // دالة البحث
-    search: async function(query, limit = 10) {
+    search: async function (query, limit, offset) {
         try {
-            const url = `https://api-v2.soundcloud.com/search?q=${encodeURIComponent(query)}&client_id=${SC_CLIENT_ID}&limit=${limit}&linked_partitioning=1`;
-            
-            const response = await fetch(url, { headers: HEADERS });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            
-            const data = await response.json();
-            if (!data.collection) return [];
-
-            const tracks = data.collection.filter(item => item.kind === 'track');
-
-            return tracks.map(track => ({
-                id: track.id.toString(),
-                title: track.title,
-                artist: track.user ? track.user.username : 'Unknown Artist',
-                duration: track.duration ? track.duration / 1000 : 0,
-                artwork: track.artwork_url ? track.artwork_url.replace('-large', '-t500x500') : null,
-                streamUrl: null
-            }));
-        } catch (error) {
-            console.error("[SoundCloud] Search error:", error);
+            const data = await scGet('/search/tracks', {
+                q: query, limit: limit || 10, offset: offset || 0, linked_partitioning: 1
+            });
+            return (data.collection || [])
+                .filter(function (t) { return t.streamable !== false && t.policy !== 'BLOCK' && t.policy !== 'SNIP'; })
+                .map(function (t) {
+                    const art = t.artwork_url || (t.user && t.user.avatar_url) || '';
+                    return {
+                        id: String(t.id),
+                        title: t.title,
+                        artist: t.user ? t.user.username : 'Unknown Artist',
+                        duration: t.duration ? t.duration / 1000 : 0,
+                        artwork: art ? art.replace('-large', '-t500x500') : null,
+                        streamUrl: null
+                    };
+                });
+        } catch (e) {
+            console.error("[SoundCloud] Search error:", e);
             return [];
         }
     },
 
-    // دالة جلب رابط التشغيل
-    getStreamUrl: async function(trackId) {
+    getStreamUrl: async function (trackId) {
         try {
-            const trackUrl = `https://api-v2.soundcloud.com/tracks/${trackId}?client_id=${SC_CLIENT_ID}`;
-            const trackResponse = await fetch(trackUrl, { headers: HEADERS });
-            if (!trackResponse.ok) throw new Error(`HTTP error! status: ${trackResponse.status}`);
-            
-            const trackData = await trackResponse.json();
-            
-            if (trackData.media && trackData.media.transcodings) {
-                const streamInfo = trackData.media.transcodings.find(
-                    t => t.format.protocol === 'progressive' || t.format.mime_type === 'audio/mpeg'
-                );
-                
-                if (streamInfo) {
-                    const streamResponse = await fetch(`${streamInfo.url}?client_id=${SC_CLIENT_ID}`, { headers: HEADERS });
-                    if (!streamResponse.ok) throw new Error(`HTTP error! status: ${streamResponse.status}`);
-                    
-                    const streamData = await streamResponse.json();
-                    return streamData.url;
-                }
-            }
-            return null;
-        } catch (error) {
-            console.error("[SoundCloud] Stream error:", error);
+            const track = await scGet('/tracks/' + trackId);
+            const tc = (track.media && track.media.transcodings) || [];
+            const pick =
+                tc.find(function (t) { return t.format && t.format.protocol === 'progressive'; }) ||
+                tc.find(function (t) { return t.format && t.format.protocol === 'hls' && (t.format.mime_type || '').indexOf('audio/mpeg') === 0; });
+            if (!pick) return null;
+
+            const url = pick.url + '?' + qs({
+                client_id: clientId,
+                track_authorization: track.track_authorization
+            });
+            const res = await fetch(url, { headers: HEADERS });
+            if (!res.ok) throw new Error('SoundCloud HTTP ' + res.status);
+            return (await res.json()).url;
+        } catch (e) {
+            console.error("[SoundCloud] Stream error:", e);
             return null;
         }
     }
 };
 
-// إرجاع الكائن للتطبيق
-SoundCloudModule;
+return SoundCloudModule;
