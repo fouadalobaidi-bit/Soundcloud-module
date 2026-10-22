@@ -42,7 +42,7 @@ function debugResult(msg) {
 const SoundCloudModule = {
     id: "soundcloud",
     name: "SoundCloud",
-    version: "1.0.2",
+    version: "1.0.3",
     author: "fouadalobaidi-bit",
     description: "البحث وتشغيل الموسيقى من SoundCloud.",
     baseUrl: "https://soundcloud.com",
