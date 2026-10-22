@@ -1,0 +1,18 @@
+{
+  "name": "SoundCloud Module for 8SPINE",
+  "identifier": "com.fouadalobaidi-bit.soundcloud-module",
+  "version": "1.0.0",
+  "author": "fouadalobaidi-bit",
+  "description": "البحث وتشغيل الموسيقى من SoundCloud داخل تطبيق 8SPINE.",
+  "modules": [
+    {
+      "id": "soundcloud",
+      "name": "SoundCloud",
+      "version": "1.0.0",
+      "author": "fouadalobaidi-bit",
+      "description": "مصدر موسيقى من SoundCloud.",
+      "icon": "https://raw.githubusercontent.com/fouadalobaidi-bit/soundcloud-module/main/icon.png",
+      "downloadURL": "https://raw.githubusercontent.com/fouadalobaidi-bit/soundcloud-module/main/soundcloud.js"
+    }
+  ]
+}
