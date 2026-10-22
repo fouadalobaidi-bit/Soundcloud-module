@@ -79,6 +79,6 @@ const SoundCloudModule = {
 };
 
 // تصدير الموديول
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = SoundCloudModule;
+// إرجاع الكائن مباشرة لبيئة التطبيق
+SoundCloudModule;
 }
