@@ -35,10 +35,14 @@ async function scGet(path, params, retried) {
     return res.json();
 }
 
+function debugResult(msg) {
+    return [{ id: 'debug', title: 'DEBUG: ' + msg, artist: 'soundcloud-module', duration: 0, artwork: null, streamUrl: null }];
+}
+
 const SoundCloudModule = {
     id: "soundcloud",
     name: "SoundCloud",
-    version: "1.0.1",
+    version: "1.0.2",
     author: "fouadalobaidi-bit",
     description: "البحث وتشغيل الموسيقى من SoundCloud.",
     baseUrl: "https://soundcloud.com",
@@ -46,42 +50,13 @@ const SoundCloudModule = {
     sources: [{ id: "soundcloud", name: "SoundCloud", lang: "all", baseUrl: "https://soundcloud.com" }],
 
     search: async function (query, limit, offset) {
-    const dbg = function (msg) {
-        return [{ id: 'debug', title: 'DEBUG: ' + msg, artist: 'soundcloud-module', duration: 0, artwork: null, streamUrl: null }];
-    };
-    try {
-        const q = typeof query === 'string' ? query : JSON.stringify(query);
-        const lim = Number(limit) > 0 ? Number(limit) : 10;
-        const off = Number(offset) >= 0 ? Number(offset) : 0;
-        const data = await scGet('/search/tracks', { q: q, limit: lim, offset: off, linked_partitioning: 1 });
-        const items = data.collection || [];
-        const out = items
-            .filter(function (t) { return t.streamable !== false && t.policy !== 'BLOCK' && t.policy !== 'SNIP'; })
-            .map(function (t) {
-                const art = t.artwork_url || (t.user && t.user.avatar_url) || '';
-                return {
-                    id: String(t.id),
-                    title: t.title,
-                    artist: t.user ? t.user.username : 'Unknown Artist',
-                    duration: t.duration ? t.duration / 1000 : 0,
-                    artwork: art ? art.replace('-large', '-t500x500') : null,
-                    streamUrl: null
-                };
-            });
-        if (!out.length) {
-            return dbg('raw=' + items.length + ' q=' + q + ' args=' + typeof query + ',' + typeof limit + ',' + typeof offset);
-        }
-        return out;
-    } catch (e) {
-        return dbg(String((e && e.message) || e));
-    }
-},
-
         try {
-            const data = await scGet('/search/tracks', {
-                q: query, limit: limit || 10, offset: offset || 0, linked_partitioning: 1
-            });
-            return (data.collection || [])
+            const q = typeof query === 'string' ? query : JSON.stringify(query);
+            const lim = Number(limit) > 0 ? Number(limit) : 10;
+            const off = Number(offset) >= 0 ? Number(offset) : 0;
+            const data = await scGet('/search/tracks', { q: q, limit: lim, offset: off, linked_partitioning: 1 });
+            const items = data.collection || [];
+            const out = items
                 .filter(function (t) { return t.streamable !== false && t.policy !== 'BLOCK' && t.policy !== 'SNIP'; })
                 .map(function (t) {
                     const art = t.artwork_url || (t.user && t.user.avatar_url) || '';
@@ -94,9 +69,12 @@ const SoundCloudModule = {
                         streamUrl: null
                     };
                 });
+            if (!out.length) {
+                return debugResult('raw=' + items.length + ' q=' + q + ' args=' + typeof query + ',' + typeof limit + ',' + typeof offset);
+            }
+            return out;
         } catch (e) {
-            console.error("[SoundCloud] Search error:", e);
-            return [];
+            return debugResult(String((e && e.message) || e));
         }
     },
 
