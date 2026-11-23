@@ -8,6 +8,7 @@ final class KeyboardViewController: UIInputViewController {
     private lazy var feedback = KeyFeedback()
     private lazy var personal = PersonalModel()
     private lazy var claude = ClaudeClient()
+    private lazy var gemini = GeminiClient()
     private var claudeTimer: Timer?
     private var claudeResult: (key: String, items: [String])?
 
@@ -86,6 +87,7 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillDisappear(animated)
         claudeTimer?.invalidate()
         claude.cancel()
+        gemini.cancel()
         personal.save()
     }
 
@@ -397,26 +399,26 @@ final class KeyboardViewController: UIInputViewController {
         return items.filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
-    // MARK: - Claude
+    // MARK: - AI suggestions (Gemini or Claude)
 
     private func claudeAllowed() -> Bool {
-        guard settings.claudeEnabled, !settings.claudeKey.isEmpty, hasFullAccess, mode == .letters else { return false }
+        guard settings.aiEnabled, !settings.activeKey.isEmpty, hasFullAccess, mode == .letters else { return false }
         let type = textDocumentProxy.keyboardType ?? .default
         let blocked: [UIKeyboardType] = [.emailAddress, .URL, .numberPad, .decimalPad, .phonePad, .asciiCapableNumberPad]
         guard !blocked.contains(type) else { return false }
-        return settings.claudeUsageToday < KeyboardSettings.claudeDailyLimit
+        return settings.aiUsageToday < KeyboardSettings.aiDailyLimit
     }
 
     private func claudeContext() -> String {
         String((textDocumentProxy.documentContextBeforeInput ?? "").suffix(300))
     }
 
-    private func scheduleClaude() {
+    private func scheduleClaude(after delay: TimeInterval = 0.35) {
         claudeTimer?.invalidate()
         claudeTimer = nil
         guard claudeAllowed() else { return }
         // Ask only when the typing pauses, so fast typing doesn't send a request per letter.
-        claudeTimer = Timer.scheduledTimer(timeInterval: 0.35, target: self, selector: #selector(fireClaude),
+        claudeTimer = Timer.scheduledTimer(timeInterval: delay, target: self, selector: #selector(fireClaude),
                                            userInfo: nil, repeats: false)
     }
 
@@ -425,19 +427,43 @@ final class KeyboardViewController: UIInputViewController {
         let context = claudeContext()
         guard !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         if claudeResult?.key == context { return }
-        settings.recordClaudeRequest()
-        claude.suggest(context: context, partialWord: currentWord(), vocabulary: personal.topWords(60),
-                       model: settings.claudeModel, apiKey: settings.claudeKey) { [weak self] result in
+        if settings.aiProvider == .gemini {
+            // Free Gemini keys allow only so many requests a minute.
+            let wait = gemini.waitTime()
+            if wait > 0 {
+                if wait < 10 { scheduleClaude(after: wait + 0.05) }
+                return
+            }
+        }
+        settings.recordAIRequest()
+        let handle: (Result<[String], Error>) -> Void = { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let items):
-                self.settings.claudeLastError = nil
+                self.settings.aiLastError = nil
                 self.claudeResult = (key: context, items: items)
                 if self.claudeContext() == context { self.updateSuggestions() }
             case .failure(let error):
                 if !ClaudeClient.isCancellation(error) {
-                    self.settings.claudeLastError = error.localizedDescription
+                    self.settings.aiLastError = error.localizedDescription
                 }
+            }
+        }
+        let word = currentWord()
+        let vocabulary = personal.topWords(60)
+        switch settings.aiProvider {
+        case .claude:
+            claude.suggest(context: context, partialWord: word, vocabulary: vocabulary,
+                           model: settings.claudeModel, apiKey: settings.claudeKey, completion: handle)
+        case .gemini:
+            gemini.suggest(context: context, partialWord: word, vocabulary: vocabulary,
+                           model: settings.geminiModel, minimalThinking: settings.geminiMinimalThinking,
+                           apiKey: settings.geminiKey) { [weak self] result in
+                if case .success(let suggestion) = result, let self {
+                    self.settings.geminiModel = suggestion.model
+                    self.settings.geminiMinimalThinking = suggestion.minimalThinking
+                }
+                handle(result.map { $0.items })
             }
         }
     }
@@ -505,7 +531,7 @@ final class KeyboardViewController: UIInputViewController {
     private func openSettings() {
         guard settingsPanel == nil else { return }
         let panel = SettingsPanel(settings: settings, palette: palette, hasFullAccess: hasFullAccess,
-                                  claude: claude, personal: personal)
+                                  claude: claude, gemini: gemini, personal: personal)
         panel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(panel)
         NSLayoutConstraint.activate([

@@ -8,7 +8,9 @@ final class SettingsPanel: UIView {
     private let palette: Palette
     private let hasFullAccess: Bool
     private let claude: ClaudeClient
+    private let gemini: GeminiClient
     private let personal: PersonalModel
+    private let providerControl = UISegmentedControl(items: ["Gemini (مجاني)", "Claude"])
     private let scroll = UIScrollView()
     private let stack = UIStackView()
     private let keyStatus = UILabel()
@@ -18,11 +20,12 @@ final class SettingsPanel: UIView {
     private var buttonHandlers: [UIButton: @MainActor () -> Void] = [:]
 
     init(settings: KeyboardSettings, palette: Palette, hasFullAccess: Bool,
-         claude: ClaudeClient, personal: PersonalModel) {
+         claude: ClaudeClient, gemini: GeminiClient, personal: PersonalModel) {
         self.settings = settings
         self.palette = palette
         self.hasFullAccess = hasFullAccess
         self.claude = claude
+        self.gemini = gemini
         self.personal = personal
         super.init(frame: .zero)
         backgroundColor = palette.panelBackground
@@ -103,14 +106,23 @@ final class SettingsPanel: UIView {
             self?.updateLearnedStatus()
         }
 
-        section("اقتراحات Claude")
-        toggle("اقتراحات Claude", isOn: s.claudeEnabled) { s.claudeEnabled = $0 }
-        toggle("Sonnet بدل Haiku (أدق، أبطأ، أغلى)", isOn: s.claudeUseSonnet) { s.claudeUseSonnet = $0 }
-        button("لصق مفتاح API من الحافظة") { [weak self] in self?.pasteKey() }
+        section("الاقتراحات الذكية")
+        toggle("تشغيل الاقتراحات الذكية", isOn: s.aiEnabled) { s.aiEnabled = $0 }
+        providerControl.selectedSegmentIndex = s.aiProvider == .gemini ? 0 : 1
+        providerControl.addTarget(self, action: #selector(providerChanged), for: .valueChanged)
+        providerControl.heightAnchor.constraint(equalToConstant: 34).isActive = true
+        stack.addArrangedSubview(providerControl)
+        toggle("Sonnet بدل Haiku (لـ Claude بس)", isOn: s.claudeUseSonnet) { s.claudeUseSonnet = $0 }
+        button("لصق المفتاح من الحافظة") { [weak self] in self?.pasteKey() }
         button("تجربة الاتصال") { [weak self] in self?.testKey() }
         button("مسح المفتاح", destructive: true) { [weak self] in
-            self?.settings.claudeKey = ""
-            self?.updateKeyStatus()
+            guard let self else { return }
+            if self.settings.aiProvider == .gemini {
+                self.settings.geminiKey = ""
+            } else {
+                self.settings.claudeKey = ""
+            }
+            self.updateKeyStatus()
         }
         keyStatus.font = .systemFont(ofSize: 13)
         keyStatus.textColor = palette.secondaryText
@@ -118,8 +130,10 @@ final class SettingsPanel: UIView {
         keyStatus.numberOfLines = 0
         stack.addArrangedSubview(keyStatus)
         updateKeyStatus()
-        note("المفتاح من platform.claude.com (حساب API منفصل عن اشتراك Claude). "
-             + "لما تشغّلها، النص اللي قبل المؤشر بالحقل الحالي (لحد ٣٠٠ حرف) يروح لـ Claude حتى يقترح.")
+        note("Gemini: سوّي مفتاح مجاني بحساب Google مالتك من aistudio.google.com ← Get API key، وانسخه. "
+             + "بالخطة المجانية Google ممكن تستخدم النص لتحسين خدماتها وممكن يقراه مراجعين، فلا تعتمد عليه بالحچي الحساس.")
+        note("Claude: المفتاح من platform.claude.com (حساب API منفصل عن اشتراك Claude).")
+        note("بالحالتين، النص اللي قبل المؤشر بالحقل الحالي (لحد ٣٠٠ حرف) يروح للخدمة حتى تقترح.")
     }
 
     private func section(_ text: String) {
@@ -203,15 +217,17 @@ final class SettingsPanel: UIView {
     }
 
     private func updateKeyStatus() {
-        let key = settings.claudeKey
+        let gemini = settings.aiProvider == .gemini
+        let key = settings.activeKey
         var lines: [String] = []
         if key.isEmpty {
-            lines.append("ماكو مفتاح.")
+            lines.append(gemini ? "ماكو مفتاح Gemini." : "ماكو مفتاح Claude.")
         } else {
-            lines.append("المفتاح: sk-ant-…" + String(key.suffix(4)))
+            lines.append((gemini ? "مفتاح Gemini: " : "مفتاح Claude: ") + String(key.prefix(6)) + "…" + String(key.suffix(4)))
+            lines.append("الموديل: " + (gemini ? settings.geminiModel : settings.claudeModel))
         }
-        lines.append("طلبات اليوم: \(settings.claudeUsageToday) من \(KeyboardSettings.claudeDailyLimit)")
-        if let error = settings.claudeLastError, !error.isEmpty {
+        lines.append("طلبات اليوم: \(settings.aiUsageToday) من \(KeyboardSettings.aiDailyLimit)")
+        if let error = settings.aiLastError, !error.isEmpty {
             lines.append("آخر خطأ: " + error)
         }
         keyStatus.text = lines.joined(separator: "\n")
@@ -223,17 +239,23 @@ final class SettingsPanel: UIView {
             return
         }
         let text = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard text.hasPrefix("sk-ant-") else {
-            keyStatus.text = "الحافظة ما بيها مفتاح يبدي بـ sk-ant-. انسخ المفتاح وارجع اضغط لصق."
+        if text.hasPrefix("AIza") {
+            settings.geminiKey = text
+            settings.aiProvider = .gemini
+        } else if text.hasPrefix("sk-ant-") {
+            settings.claudeKey = text
+            settings.aiProvider = .claude
+        } else {
+            keyStatus.text = "الحافظة ما بيها مفتاح Gemini (يبدي بـ AIza) أو Claude (يبدي بـ sk-ant-). انسخه وارجع اضغط لصق."
             return
         }
-        settings.claudeKey = text
-        settings.claudeLastError = nil
+        providerControl.selectedSegmentIndex = settings.aiProvider == .gemini ? 0 : 1
+        settings.aiLastError = nil
         updateKeyStatus()
     }
 
     private func testKey() {
-        let key = settings.claudeKey
+        let key = settings.activeKey
         guard !key.isEmpty else {
             keyStatus.text = "الصق المفتاح أول."
             return
@@ -243,17 +265,32 @@ final class SettingsPanel: UIView {
             return
         }
         keyStatus.text = "جاري التجربة…"
-        let model = settings.claudeModel
-        claude.test(apiKey: key, model: model) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success:
-                self.settings.claudeLastError = nil
-                self.updateKeyStatus()
-                self.keyStatus.text = "✓ يشتغل (" + model + ")\n" + (self.keyStatus.text ?? "")
-            case .failure(let error):
-                self.keyStatus.text = "✗ " + error.localizedDescription
+        switch settings.aiProvider {
+        case .claude:
+            let model = settings.claudeModel
+            claude.test(apiKey: key, model: model) { [weak self] result in
+                self?.showTestResult(result.map { _ in model })
             }
+        case .gemini:
+            gemini.test(apiKey: key, model: settings.geminiModel,
+                        minimalThinking: settings.geminiMinimalThinking) { [weak self] result in
+                if case .success(let reply) = result, let self {
+                    self.settings.geminiModel = reply.model
+                    self.settings.geminiMinimalThinking = reply.minimalThinking
+                }
+                self?.showTestResult(result.map { $0.model })
+            }
+        }
+    }
+
+    private func showTestResult(_ result: Result<String, Error>) {
+        switch result {
+        case .success(let model):
+            settings.aiLastError = nil
+            updateKeyStatus()
+            keyStatus.text = "✓ يشتغل (" + model + ")\n" + (keyStatus.text ?? "")
+        case .failure(let error):
+            keyStatus.text = "✗ " + error.localizedDescription
         }
     }
 
@@ -269,6 +306,11 @@ final class SettingsPanel: UIView {
 
     @objc private func buttonTapped(_ sender: UIButton) {
         buttonHandlers[sender]?()
+    }
+
+    @objc private func providerChanged() {
+        settings.aiProvider = providerControl.selectedSegmentIndex == 0 ? .gemini : .claude
+        updateKeyStatus()
     }
 
     @objc private func close() {

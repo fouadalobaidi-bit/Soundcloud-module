@@ -1,10 +1,14 @@
 import UIKit
 
+enum AIProvider: String {
+    case gemini, claude
+}
+
 /// Settings live in the keyboard's own storage on the phone.
 @MainActor
 final class KeyboardSettings {
     static let shared = KeyboardSettings()
-    static let claudeDailyLimit = 1000
+    static let aiDailyLimit = 1000
     private let defaults = UserDefaults.standard
 
     private func bool(_ key: String, _ fallback: Bool) -> Bool {
@@ -77,11 +81,21 @@ final class KeyboardSettings {
         set { defaults.set(newValue.rawValue, forKey: "language") }
     }
 
-    // MARK: Claude
+    // MARK: AI suggestions
 
-    var claudeEnabled: Bool {
+    var aiEnabled: Bool {
         get { bool("claudeEnabled", false) }
         set { defaults.set(newValue, forKey: "claudeEnabled") }
+    }
+
+    var aiProvider: AIProvider {
+        get { AIProvider(rawValue: defaults.string(forKey: "aiProvider") ?? "") ?? .gemini }
+        set { defaults.set(newValue.rawValue, forKey: "aiProvider") }
+    }
+
+    /// The key for whichever provider is selected.
+    var activeKey: String {
+        aiProvider == .claude ? claudeKey : geminiKey
     }
 
     var claudeUseSonnet: Bool {
@@ -98,7 +112,22 @@ final class KeyboardSettings {
         set { defaults.set(newValue, forKey: "claudeKey") }
     }
 
-    var claudeLastError: String? {
+    var geminiKey: String {
+        get { defaults.string(forKey: "geminiKey") ?? "" }
+        set { defaults.set(newValue, forKey: "geminiKey") }
+    }
+
+    var geminiModel: String {
+        get { defaults.string(forKey: "geminiModel") ?? GeminiClient.defaultModel }
+        set { defaults.set(newValue, forKey: "geminiModel") }
+    }
+
+    var geminiMinimalThinking: Bool {
+        get { bool("geminiMinimalThinking", true) }
+        set { defaults.set(newValue, forKey: "geminiMinimalThinking") }
+    }
+
+    var aiLastError: String? {
         get { defaults.string(forKey: "claudeLastError") }
         set { defaults.set(newValue, forKey: "claudeLastError") }
     }
@@ -107,12 +136,12 @@ final class KeyboardSettings {
         String(Int(Date().timeIntervalSince1970 / 86_400))
     }
 
-    var claudeUsageToday: Int {
+    var aiUsageToday: Int {
         defaults.string(forKey: "claudeUsageDay") == today ? defaults.integer(forKey: "claudeUsageCount") : 0
     }
 
-    func recordClaudeRequest() {
-        let count = claudeUsageToday + 1
+    func recordAIRequest() {
+        let count = aiUsageToday + 1
         defaults.set(today, forKey: "claudeUsageDay")
         defaults.set(count, forKey: "claudeUsageCount")
     }
