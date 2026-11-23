@@ -48,7 +48,6 @@ final class KeyboardView: UIView {
     private var keyViews: [[KeyView]] = []
     private var frames: [[CGRect]] = []
     private let overlay = PopupOverlay()
-    private let overlayExtra: CGFloat = 80
     private var tracks: [UITouch: TouchTrack] = [:]
     private weak var overlayOwner: TouchTrack?
 
@@ -91,11 +90,15 @@ final class KeyboardView: UIView {
         let width = bounds.width
         guard width > 0 else { return }
         let m = metrics
-        let unit = (width - 2 * m.sideInset - (layout.columns - 1) * m.horizontalGap) / layout.columns
+        // Keep keys inside the safe area (rounded corners / notch in landscape).
+        let insets = safeAreaInsets
+        let usable = width - insets.left - insets.right
+        let unit = (usable - 2 * m.sideInset - (layout.columns - 1) * m.horizontalGap) / layout.columns
         var all: [[CGRect]] = []
         for (i, row) in layout.rows.enumerated() {
             let y = m.topInset + CGFloat(i) * m.rowHeight + m.verticalGap / 2
-            let rowFrames = Self.frames(for: row, width: width, unit: unit, y: y, height: m.keyHeight, metrics: m)
+            let rowFrames = Self.frames(for: row, width: usable, unit: unit, y: y, height: m.keyHeight, metrics: m)
+                .map { $0.offsetBy(dx: insets.left, dy: 0) }
             all.append(rowFrames)
             if i < keyViews.count {
                 for (j, f) in rowFrames.enumerated() where j < keyViews[i].count {
@@ -107,7 +110,9 @@ final class KeyboardView: UIView {
             }
         }
         frames = all
-        overlay.frame = CGRect(x: 0, y: -overlayExtra, width: width, height: bounds.height + overlayExtra)
+        // The preview bubble may rise into the suggestion bar, but never above the keyboard.
+        let extra = m.barHeight
+        overlay.frame = CGRect(x: 0, y: -extra, width: width, height: bounds.height + extra)
         bringSubviewToFront(overlay)
     }
 
