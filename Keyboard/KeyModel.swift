@@ -5,7 +5,8 @@ enum KeyboardLanguage: String {
     case arabic = "ar"
 
     var toggled: KeyboardLanguage { self == .english ? .arabic : .english }
-    var spaceLabel: String { self == .english ? "English" : "عربي" }
+    /// Small marker in the corner of the space bar, like the "A" on Apple's keyboard.
+    var spaceMarker: String { self == .english ? "A" : "ع" }
 }
 
 enum KeyboardMode {
@@ -33,10 +34,10 @@ enum KeyAction: Equatable {
 }
 
 enum KeyWidth {
-    /// Width in letter-key units (a unit is one letter key; gaps are added in between).
+    /// Width in this layout's letter units (Arabic rows hold 11 letters, so its unit is narrower).
     case units(CGFloat)
-    /// Fraction of the whole keyboard width (used for the bottom row).
-    case fraction(CGFloat)
+    /// Width in English letter units, so the key is the same size on every layout.
+    case baseUnits(CGFloat)
     /// Takes whatever is left in the row (the space bar).
     case flexible
 
@@ -47,7 +48,7 @@ enum KeyWidth {
 }
 
 enum KeyStyle {
-    case normal, special, accent
+    case normal, accent, active
 }
 
 enum KeyPin {
@@ -64,12 +65,15 @@ struct KeyDef {
     var pin: KeyPin = .free
     var showsPopup: Bool = false
     var fontSize: CGFloat? = nil
+    var cornerLabel: String? = nil
 }
 
 struct KeyboardLayout {
     var rows: [[KeyDef]]
     /// How many letter units fit across the keyboard for this layout.
     var columns: CGFloat
+    /// Height of each row relative to a normal row.
+    var rowScales: [CGFloat]
 }
 
 struct LayoutContext {
@@ -80,9 +84,13 @@ struct LayoutContext {
     var returnLabel: String?
     var returnIsAccent: Bool
     var arabicDigits: Bool
+    var numberRow: Bool
 }
 
 enum LayoutFactory {
+    /// The optional number row is a little shorter than a letter row.
+    static let numberRowScale: CGFloat = 0.82
+
     static let englishAlternates: [String: [String]] = [
         "a": ["à", "á", "â", "ä", "æ", "ã", "å"],
         "e": ["è", "é", "ê", "ë"],
@@ -133,22 +141,45 @@ enum LayoutFactory {
     static let arabicIndicDigits = ["١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩", "٠"]
 
     static func make(_ c: LayoutContext) -> KeyboardLayout {
+        var layout: KeyboardLayout
         switch c.mode {
         case .letters:
-            return c.language == .english ? englishLetters(c) : arabicLetters(c)
+            layout = c.language == .english ? englishLetters(c) : arabicLetters(c)
         case .numbers:
-            return numbers(c)
+            layout = numbers(c)
         case .symbols:
-            return symbols(c)
+            layout = symbols(c)
         }
+        if c.numberRow {
+            if c.mode == .letters {
+                layout.rows.insert(numberRow(c), at: 0)
+                layout.rowScales.insert(numberRowScale, at: 0)
+            } else {
+                // Keep the keyboard the same height: share the number row's height between the rows.
+                let grow = 1 + numberRowScale / CGFloat(max(1, layout.rows.count))
+                layout.rowScales = layout.rowScales.map { $0 * grow }
+            }
+        }
+        return layout
     }
 
     private static func charKey(_ s: String, alternates: [String] = [], width: KeyWidth = .units(1)) -> KeyDef {
         KeyDef(action: .character(s), label: s, alternates: alternates, width: width, showsPopup: true)
     }
 
-    private static func deleteKey(_ units: CGFloat) -> KeyDef {
-        KeyDef(action: .delete, symbol: "delete.left", width: .units(units), style: .special, pin: .trailing)
+    private static func deleteKey() -> KeyDef {
+        KeyDef(action: .delete, symbol: "delete.left", width: .baseUnits(1.29), pin: .trailing)
+    }
+
+    private static func digits(_ c: LayoutContext) -> (primary: [String], secondary: [String]) {
+        c.arabicDigits ? (arabicIndicDigits, westernDigits) : (westernDigits, arabicIndicDigits)
+    }
+
+    private static func numberRow(_ c: LayoutContext) -> [KeyDef] {
+        let d = digits(c)
+        return zip(d.primary, d.secondary).map { pair in
+            charKey(pair.0, alternates: [pair.1], width: .baseUnits(1))
+        }
     }
 
     private static func englishLetters(_ c: LayoutContext) -> KeyboardLayout {
@@ -168,12 +199,13 @@ enum LayoutFactory {
         case .locked: shiftSymbol = "capslock.fill"
         }
         var r3: [KeyDef] = [
-            KeyDef(action: .shift, symbol: shiftSymbol, width: .units(1.35),
-                   style: c.shift == .off ? .special : .normal, pin: .leading)
+            KeyDef(action: .shift, symbol: shiftSymbol, width: .baseUnits(1.29),
+                   style: c.shift == .off ? .normal : .active, pin: .leading)
         ]
         r3 += row("zxcvbnm")
-        r3.append(deleteKey(1.35))
-        return KeyboardLayout(rows: [row("qwertyuiop"), row("asdfghjkl"), r3, bottomRow(c)], columns: 10)
+        r3.append(deleteKey())
+        return KeyboardLayout(rows: [row("qwertyuiop"), row("asdfghjkl"), r3, bottomRow(c)],
+                              columns: 10, rowScales: [1, 1, 1, 1])
     }
 
     private static func arabicLetters(_ c: LayoutContext) -> KeyboardLayout {
@@ -183,7 +215,8 @@ enum LayoutFactory {
         let r1 = ["ض", "ص", "ث", "ق", "ف", "غ", "ع", "ه", "خ", "ح", "ج"]
         let r2 = ["ش", "س", "ي", "ب", "ل", "ا", "ت", "ن", "م", "ك", "ط"]
         let r3 = ["ذ", "ء", "ر", "ى", "ة", "و", "ز", "ظ", "د"]
-        return KeyboardLayout(rows: [row(r1), row(r2), row(r3) + [deleteKey(1.5)], bottomRow(c)], columns: 11)
+        return KeyboardLayout(rows: [row(r1), row(r2), row(r3) + [deleteKey()], bottomRow(c)],
+                              columns: 11, rowScales: [1, 1, 1, 1])
     }
 
     private static func punctuationRow(_ arabic: Bool) -> [KeyDef] {
@@ -192,18 +225,17 @@ enum LayoutFactory {
     }
 
     private static func numbers(_ c: LayoutContext) -> KeyboardLayout {
-        let primary = c.arabicDigits ? arabicIndicDigits : westernDigits
-        let secondary = c.arabicDigits ? westernDigits : arabicIndicDigits
-        let r1 = zip(primary, secondary).map { pair in charKey(pair.0, alternates: [pair.1]) }
+        let d = digits(c)
+        let r1 = zip(d.primary, d.secondary).map { pair in charKey(pair.0, alternates: [pair.1]) }
         let arabic = c.language == .arabic
         let r2 = ["-", "/", ":", arabic ? "؛" : ";", "(", ")", "$", "&", "@", "\""]
             .map { charKey($0, alternates: symbolAlternates[$0] ?? []) }
         var r3: [KeyDef] = [
-            KeyDef(action: .mode(.symbols), label: "#+=", width: .units(1.35), style: .special, pin: .leading, fontSize: 16)
+            KeyDef(action: .mode(.symbols), label: "#+=", width: .baseUnits(1.29), pin: .leading, fontSize: 18)
         ]
         r3 += punctuationRow(arabic)
-        r3.append(deleteKey(1.35))
-        return KeyboardLayout(rows: [r1, r2, r3, bottomRow(c)], columns: 10)
+        r3.append(deleteKey())
+        return KeyboardLayout(rows: [r1, r2, r3, bottomRow(c)], columns: 10, rowScales: [1, 1, 1, 1])
     }
 
     private static func symbols(_ c: LayoutContext) -> KeyboardLayout {
@@ -212,34 +244,35 @@ enum LayoutFactory {
         let r2 = ["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"]
             .map { charKey($0) }
         var r3: [KeyDef] = [
-            KeyDef(action: .mode(.numbers), label: c.arabicDigits ? "١٢٣" : "123", width: .units(1.35),
-                   style: .special, pin: .leading, fontSize: 16)
+            KeyDef(action: .mode(.numbers), label: c.arabicDigits ? "١٢٣" : "123", width: .baseUnits(1.29),
+                   pin: .leading, fontSize: 18)
         ]
         r3 += punctuationRow(c.language == .arabic)
-        r3.append(deleteKey(1.35))
-        return KeyboardLayout(rows: [r1, r2, r3, bottomRow(c)], columns: 10)
+        r3.append(deleteKey())
+        return KeyboardLayout(rows: [r1, r2, r3, bottomRow(c)], columns: 10, rowScales: [1, 1, 1, 1])
     }
 
+    /// Same widths as Apple's bottom row: 1.25 + 1.25 + space + 2.5 letter units.
     private static func bottomRow(_ c: LayoutContext) -> [KeyDef] {
         let arabic = c.language == .arabic
         var row: [KeyDef] = []
         switch c.mode {
         case .letters:
             row.append(KeyDef(action: .mode(.numbers), label: c.arabicDigits ? "١٢٣" : "123",
-                              width: .fraction(0.125), style: .special, fontSize: 16))
+                              width: .baseUnits(1.25), fontSize: 18))
         case .numbers, .symbols:
             row.append(KeyDef(action: .mode(.letters), label: arabic ? "أبج" : "ABC",
-                              width: .fraction(0.125), style: .special, fontSize: 16))
+                              width: .baseUnits(1.25), fontSize: 18))
         }
         row.append(KeyDef(action: .languageToggle, label: arabic ? "EN" : "ع",
-                          width: .fraction(0.105), style: .special, fontSize: arabic ? 15 : 20))
+                          width: .baseUnits(1.25), fontSize: arabic ? 17 : 22))
         if c.needsGlobe {
-            row.append(KeyDef(action: .nextKeyboard, symbol: "globe", width: .fraction(0.105), style: .special))
+            row.append(KeyDef(action: .nextKeyboard, symbol: "globe", width: .baseUnits(1.25)))
         }
-        row.append(KeyDef(action: .space, label: c.language.spaceLabel, width: .flexible, style: .normal, fontSize: 15))
+        row.append(KeyDef(action: .space, width: .flexible, cornerLabel: c.language.spaceMarker))
         row.append(KeyDef(action: .returnKey, label: c.returnLabel ?? "",
                           symbol: c.returnLabel == nil ? "return.left" : nil,
-                          width: .fraction(0.245), style: c.returnIsAccent ? .accent : .special, fontSize: 16))
+                          width: .baseUnits(2.5), style: c.returnIsAccent ? .accent : .normal, fontSize: 17))
         return row
     }
 }

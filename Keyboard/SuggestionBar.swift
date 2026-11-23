@@ -6,6 +6,8 @@ protocol SuggestionBarDelegate: AnyObject {
     func suggestionBarDidTapSettings(_ bar: SuggestionBar)
 }
 
+/// Laid out like Apple's iOS 26 bar: an icon on the left (our settings button),
+/// then three equal suggestion slots split by thin lines.
 final class SuggestionBar: UIView {
     struct Entry {
         let text: String
@@ -25,14 +27,16 @@ final class SuggestionBar: UIView {
         super.init(frame: frame)
         backgroundColor = UIColor(white: 1, alpha: 0.001)
 
-        highlightView.layer.cornerRadius = 8
+        highlightView.layer.cornerRadius = 10
+        highlightView.layer.cornerCurve = .continuous
         highlightView.isUserInteractionEnabled = false
+        highlightView.isHidden = true
         addSubview(highlightView)
 
         for i in 0..<3 {
             let b = UIButton(type: .custom)
             b.tag = i
-            b.titleLabel?.font = .systemFont(ofSize: 16)
+            b.titleLabel?.font = .systemFont(ofSize: 17)
             b.titleLabel?.lineBreakMode = .byTruncatingMiddle
             b.titleLabel?.adjustsFontSizeToFitWidth = true
             b.titleLabel?.minimumScaleFactor = 0.7
@@ -40,13 +44,13 @@ final class SuggestionBar: UIView {
             addSubview(b)
             buttons.append(b)
         }
-        for _ in 0..<2 {
+        for _ in 0..<3 {
             let s = UIView()
             s.isUserInteractionEnabled = false
             addSubview(s)
             separators.append(s)
         }
-        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
         settingsButton.setImage(UIImage(systemName: "gearshape", withConfiguration: config), for: .normal)
         settingsButton.addTarget(self, action: #selector(settingsTapped), for: .touchUpInside)
         addSubview(settingsButton)
@@ -75,15 +79,13 @@ final class SuggestionBar: UIView {
             if let e = slots[i] {
                 let title = (e.isTyped && quoteTyped) ? "“\(e.text)”" : e.text
                 b.setTitle(title, for: .normal)
-                b.titleLabel?.font = .systemFont(ofSize: 16, weight: e.highlighted ? .semibold : .regular)
+                b.titleLabel?.font = .systemFont(ofSize: 17, weight: e.highlighted ? .semibold : .regular)
                 b.isHidden = false
             } else {
                 b.setTitle(nil, for: .normal)
                 b.isHidden = true
             }
         }
-        separators.forEach { $0.isHidden = false }
-        settingsButton.isHidden = true
         setNeedsLayout()
     }
 
@@ -93,9 +95,7 @@ final class SuggestionBar: UIView {
             b.setTitle(nil, for: .normal)
             b.isHidden = true
         }
-        separators.forEach { $0.isHidden = true }
         highlightView.isHidden = true
-        settingsButton.isHidden = false
         setNeedsLayout()
     }
 
@@ -103,22 +103,29 @@ final class SuggestionBar: UIView {
         for b in buttons { b.setTitleColor(palette.text, for: .normal) }
         separators.forEach { $0.backgroundColor = palette.separator }
         highlightView.backgroundColor = palette.keyFill
-        settingsButton.tintColor = palette.secondaryText
+        settingsButton.tintColor = palette.barIcon
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let w = bounds.width / 3
+        let width = bounds.width
+        let height = bounds.height
+        let iconWidth = (width * 0.135).rounded()
+        let slotWidth = (width - iconWidth) / 3
+        settingsButton.frame = CGRect(x: 0, y: 0, width: iconWidth, height: height)
         for (i, b) in buttons.enumerated() {
-            b.frame = CGRect(x: CGFloat(i) * w, y: 0, width: w, height: bounds.height).insetBy(dx: 6, dy: 4)
+            b.frame = CGRect(x: iconWidth + CGFloat(i) * slotWidth, y: 0, width: slotWidth, height: height)
+                .insetBy(dx: 6, dy: 4)
         }
+        let lineTop = (height * 0.27).rounded()
+        let lineHeight = max(0, height - 2 * lineTop + 2)
         for (i, s) in separators.enumerated() {
-            s.frame = CGRect(x: CGFloat(i + 1) * w - 0.5, y: 12, width: 1, height: max(0, bounds.height - 24))
+            s.frame = CGRect(x: iconWidth + CGFloat(i) * slotWidth - 0.5, y: lineTop, width: 1, height: lineHeight)
         }
-        settingsButton.frame = CGRect(x: 4, y: 0, width: 44, height: bounds.height)
         if let i = slots.firstIndex(where: { $0?.highlighted == true }) {
             highlightView.isHidden = false
-            highlightView.frame = CGRect(x: CGFloat(i) * w, y: 0, width: w, height: bounds.height).insetBy(dx: 4, dy: 5)
+            highlightView.frame = CGRect(x: iconWidth + CGFloat(i) * slotWidth, y: 0, width: slotWidth, height: height)
+                .insetBy(dx: 5, dy: 6)
         } else {
             highlightView.isHidden = true
         }

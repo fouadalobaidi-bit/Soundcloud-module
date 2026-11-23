@@ -92,7 +92,6 @@ final class KeyboardViewController: UIInputViewController {
         metrics = target
         keyboardView.metrics = target
         barHeightConstraint?.constant = target.barHeight
-        heightConstraint?.constant = totalHeight()
         reloadKeyboard()
     }
 
@@ -102,7 +101,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func totalHeight() -> CGFloat {
-        metrics.barHeight + metrics.keysHeight(rows: 4)
+        let rows = settings.numberRow ? 4 + LayoutFactory.numberRowScale : 4
+        return metrics.barHeight + metrics.topInset + rows * metrics.rowHeight + metrics.bottomInset
     }
 
     // MARK: - State
@@ -136,9 +136,15 @@ final class KeyboardViewController: UIInputViewController {
         let context = LayoutContext(language: language, mode: mode, shift: shift,
                                     needsGlobe: needsInputModeSwitchKey,
                                     returnLabel: ret.label, returnIsAccent: ret.accent,
-                                    arabicDigits: settings.arabicDigits)
+                                    arabicDigits: settings.arabicDigits,
+                                    numberRow: settings.numberRow)
+        let layout = LayoutFactory.make(context)
         keyboardView.rightToLeft = language == .arabic
-        keyboardView.apply(layout: LayoutFactory.make(context), palette: palette)
+        keyboardView.apply(layout: layout, palette: palette)
+        let height = metrics.barHeight + metrics.keysHeight(layout)
+        if let constraint = heightConstraint, abs(constraint.constant - height) > 0.5 {
+            constraint.constant = height
+        }
     }
 
     private func returnKeyInfo() -> (label: String?, accent: Bool) {

@@ -16,7 +16,7 @@ final class PopupOverlay: UIView {
         isUserInteractionEnabled = false
         backgroundColor = .clear
         shape.shadowOffset = CGSize(width: 0, height: 1)
-        shape.shadowRadius = 2
+        shape.shadowRadius = 3
         shape.shadowOpacity = 1
         layer.addSublayer(shape)
         selectionLayer.cornerRadius = 7
@@ -45,8 +45,8 @@ final class PopupOverlay: UIView {
         CATransaction.setDisableActions(true)
         shape.path = Self.calloutPath(key: k, left: left, right: right, top: top,
                                       bubbleHeight: bubbleHeight, neck: neck, keyRadius: metrics.cornerRadius).cgPath
-        shape.fillColor = palette.keyFill.cgColor
-        shape.shadowColor = palette.shadow.cgColor
+        shape.fillColor = palette.popupFill.cgColor
+        shape.shadowColor = palette.popupShadow.cgColor
         selectionLayer.isHidden = true
         CATransaction.commit()
 
@@ -81,8 +81,8 @@ final class PopupOverlay: UIView {
         CATransaction.setDisableActions(true)
         shape.path = Self.calloutPath(key: k, left: left, right: right, top: top,
                                       bubbleHeight: bubbleHeight, neck: neck, keyRadius: metrics.cornerRadius).cgPath
-        shape.fillColor = palette.keyFill.cgColor
-        shape.shadowColor = palette.shadow.cgColor
+        shape.fillColor = palette.popupFill.cgColor
+        shape.shadowColor = palette.popupShadow.cgColor
         selectionLayer.backgroundColor = palette.accentFill.cgColor
         selectionLayer.isHidden = false
         CATransaction.commit()

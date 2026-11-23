@@ -43,10 +43,11 @@ final class KeyboardView: UIView {
     }
     var rightToLeft = false
 
-    private(set) var layout = KeyboardLayout(rows: [], columns: 10)
+    private(set) var layout = KeyboardLayout(rows: [], columns: 10, rowScales: [])
     private var palette = Palette(isDark: false)
     private var keyViews: [[KeyView]] = []
     private var frames: [[CGRect]] = []
+    private var rowBottoms: [CGFloat] = []
     private let overlay = PopupOverlay()
     private var tracks: [UITouch: TouchTrack] = [:]
     private weak var overlayOwner: TouchTrack?
@@ -93,13 +94,22 @@ final class KeyboardView: UIView {
         // Keep keys inside the safe area (rounded corners / notch in landscape).
         let insets = safeAreaInsets
         let usable = width - insets.left - insets.right
-        let unit = (usable - 2 * m.sideInset - (layout.columns - 1) * m.horizontalGap) / layout.columns
+        let side = m.sideInset(for: usable)
+        let gap = m.horizontalGap(for: usable)
+        let unit = (usable - 2 * side - (layout.columns - 1) * gap) / layout.columns
+        let baseUnit = (usable - 2 * side - 9 * gap) / 10
+        let heights = m.rowHeights(layout)
         var all: [[CGRect]] = []
+        var bottoms: [CGFloat] = []
+        var y = m.topInset
         for (i, row) in layout.rows.enumerated() {
-            let y = m.topInset + CGFloat(i) * m.rowHeight + m.verticalGap / 2
-            let rowFrames = Self.frames(for: row, width: usable, unit: unit, y: y, height: m.keyHeight, metrics: m)
+            let rowHeight = heights[i]
+            let rowFrames = Self.frames(for: row, width: usable, unit: unit, baseUnit: baseUnit, gap: gap, side: side,
+                                        y: y + m.verticalGap / 2, height: rowHeight - m.verticalGap)
                 .map { $0.offsetBy(dx: insets.left, dy: 0) }
             all.append(rowFrames)
+            y += rowHeight
+            bottoms.append(y)
             if i < keyViews.count {
                 for (j, f) in rowFrames.enumerated() where j < keyViews[i].count {
                     keyViews[i][j].frame = f
@@ -110,19 +120,19 @@ final class KeyboardView: UIView {
             }
         }
         frames = all
+        rowBottoms = bottoms
         // The preview bubble may rise into the suggestion bar, but never above the keyboard.
         let extra = m.barHeight
         overlay.frame = CGRect(x: 0, y: -extra, width: width, height: bounds.height + extra)
         bringSubviewToFront(overlay)
     }
 
-    static func frames(for row: [KeyDef], width: CGFloat, unit: CGFloat, y: CGFloat,
-                       height: CGFloat, metrics m: Metrics) -> [CGRect] {
-        let gap = m.horizontalGap
+    static func frames(for row: [KeyDef], width: CGFloat, unit: CGFloat, baseUnit: CGFloat,
+                       gap: CGFloat, side: CGFloat, y: CGFloat, height: CGFloat) -> [CGRect] {
         func fixedWidth(_ k: KeyDef) -> CGFloat {
             switch k.width {
             case .units(let n): return n * unit + max(0, n - 1) * gap
-            case .fraction(let f): return f * width
+            case .baseUnits(let n): return n * baseUnit + max(0, n - 1) * gap
             case .flexible: return 0
             }
         }
@@ -131,8 +141,8 @@ final class KeyboardView: UIView {
 
         if flexibleCount > 0 {
             let fixed = row.reduce(CGFloat(0)) { $0 + fixedWidth($1) }
-            let flex = max(0, (width - 2 * m.sideInset - fixed - CGFloat(row.count - 1) * gap) / CGFloat(flexibleCount))
-            var x = m.sideInset
+            let flex = max(0, (width - 2 * side - fixed - CGFloat(row.count - 1) * gap) / CGFloat(flexibleCount))
+            var x = side
             for (i, k) in row.enumerated() {
                 let w = k.width.isFlexible ? flex : fixedWidth(k)
                 result[i] = CGRect(x: x, y: y, width: w, height: height)
@@ -141,8 +151,8 @@ final class KeyboardView: UIView {
             return result
         }
 
-        var leftEdge = m.sideInset
-        var rightEdge = width - m.sideInset
+        var leftEdge = side
+        var rightEdge = width - side
         for (i, k) in row.enumerated() where k.pin == .leading {
             let w = fixedWidth(k)
             result[i] = CGRect(x: leftEdge, y: y, width: w, height: height)
@@ -175,9 +185,8 @@ final class KeyboardView: UIView {
     // MARK: - Hit testing
 
     private func keyAt(_ p: CGPoint) -> (KeyDef, CGRect)? {
-        guard !frames.isEmpty, frames.count == layout.rows.count else { return nil }
-        var rowIndex = Int(floor((p.y - metrics.topInset) / metrics.rowHeight))
-        rowIndex = min(max(rowIndex, 0), frames.count - 1)
+        guard !frames.isEmpty, frames.count == layout.rows.count, rowBottoms.count == frames.count else { return nil }
+        let rowIndex = rowBottoms.firstIndex(where: { p.y < $0 }) ?? (frames.count - 1)
         let rowFrames = frames[rowIndex]
         guard !rowFrames.isEmpty else { return nil }
         var best = 0

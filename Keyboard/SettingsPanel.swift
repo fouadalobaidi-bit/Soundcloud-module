@@ -22,7 +22,7 @@ final class SettingsPanel: UIView {
         stack.semanticContentAttribute = .forceRightToLeft
 
         let title = UILabel()
-        title.text = "إعدادات حرف"
+        title.text = "إعدادات الكيبورد"
         title.font = .boldSystemFont(ofSize: 17)
         title.textColor = palette.text
         let done = UIButton(type: .system)
@@ -37,6 +37,7 @@ final class SettingsPanel: UIView {
         stack.addArrangedSubview(header)
 
         let s = settings
+        stack.addArrangedSubview(row("شريط الأرقام فوق الحروف", isOn: s.numberRow) { s.numberRow = $0 })
         stack.addArrangedSubview(row("اهتزاز عند الضغط", isOn: s.haptics) { s.haptics = $0 })
         stack.addArrangedSubview(row("صوت المفاتيح", isOn: s.sound) { s.sound = $0 })
         stack.addArrangedSubview(row("تصحيح تلقائي للإنكليزي", isOn: s.autocorrectEnglish) { s.autocorrectEnglish = $0 })

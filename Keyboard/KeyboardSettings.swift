@@ -10,6 +10,11 @@ final class KeyboardSettings {
         defaults.object(forKey: key) as? Bool ?? fallback
     }
 
+    var numberRow: Bool {
+        get { bool("numberRow", false) }
+        set { defaults.set(newValue, forKey: "numberRow") }
+    }
+
     var haptics: Bool {
         get { bool("haptics", true) }
         set { defaults.set(newValue, forKey: "haptics") }
