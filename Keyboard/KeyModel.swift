@@ -1,4 +1,4 @@
-import UIKit
+import Foundation
 
 enum KeyboardLanguage: String {
     case english = "en"
@@ -26,6 +26,8 @@ enum KeyAction: Equatable {
     case mode(KeyboardMode)
     case languageToggle
     case nextKeyboard
+    /// Apple's ◌ً key: shows the Arabic diacritics in the suggestion bar.
+    case diacritics
 
     var isCharacter: Bool {
         if case .character = self { return true }
@@ -38,6 +40,8 @@ enum KeyWidth {
     case units(CGFloat)
     /// Width in English letter units, so the key is the same size on every layout.
     case baseUnits(CGFloat)
+    /// Width in points as measured on Apple's 440 pt wide keyboard; scales with the screen.
+    case points(CGFloat)
     /// Takes whatever is left in the row (the space bar).
     case flexible
 
@@ -76,6 +80,10 @@ struct KeyboardLayout {
     var columns: CGFloat
     /// Height of each row relative to a normal row.
     var rowScales: [CGFloat]
+    /// Space between keys relative to the English layout (Apple's Arabic keys sit closer together).
+    var gapScale: CGFloat = 1
+    /// Side margins relative to the English layout.
+    var sideScale: CGFloat = 1
 }
 
 struct LayoutContext {
@@ -107,21 +115,28 @@ enum LayoutFactory {
     ]
 
     /// Long-press extras. Iraqi letters (گ چ پ ڤ ژ) live under their closest base letter.
+    /// The diacritics have their own key (◌ً), as on Apple's keyboard.
     static let arabicAlternates: [String: [String]] = [
         "ا": ["أ", "إ", "آ"],
         "ي": ["ئ"],
         "ى": ["ئ"],
         "و": ["ؤ"],
         "ء": ["ئ", "ؤ", "أ", "إ"],
-        "ه": ["ة"],
         "ك": ["گ"],
         "ج": ["چ"],
         "ب": ["پ"],
         "ف": ["ڤ"],
         "ز": ["ژ"],
-        "ل": ["لا"],
-        "ذ": ["َ", "ُ", "ِ", "ّ", "ْ", "ً"]
+        "ل": ["لا"]
     ]
+
+    /// Fatha, damma, kasra, sukun, shadda and the three tanween, in the order Apple's bar shows them.
+    static let arabicDiacritics = ["\u{064E}", "\u{064F}", "\u{0650}", "\u{0652}", "\u{0651}",
+                                   "\u{064B}", "\u{064C}", "\u{064D}"]
+
+    /// Apple's Arabic keys are 6 pt apart on a 440 pt screen instead of 6.67, with 6.7 pt margins instead of 7.
+    static let arabicGapScale: CGFloat = 6.0 / 6.67
+    static let arabicSideScale: CGFloat = 6.7 / 7
 
     static let symbolAlternates: [String: [String]] = [
         "-": ["–", "—", "•"],
@@ -181,8 +196,10 @@ enum LayoutFactory {
 
     private static func numberRow(_ c: LayoutContext) -> [KeyDef] {
         let d = digits(c)
+        // Ten digits fill the row: 1.1 Arabic letter units each (the Arabic rows hold 11 keys).
+        let width: KeyWidth = c.language == .arabic ? .units(1.1) : .baseUnits(1)
         return zip(d.primary, d.secondary).map { pair in
-            charKey(pair.0, alternates: [pair.1], width: .baseUnits(1))
+            charKey(pair.0, alternates: [pair.1], width: width)
         }
     }
 
@@ -215,20 +232,51 @@ enum LayoutFactory {
                               columns: 10, rowScales: [1, 1, 1, 1])
     }
 
+    /// Apple's iOS 26 Arabic layout, left to right as it appears on screen.
+    static let arabicRows: [[String]] = [
+        ["ض", "ص", "ث", "ق", "ف", "غ", "ع", "ه", "خ", "ح", "ج"],
+        ["ش", "س", "ي", "ب", "ل", "ا", "ت", "ن", "م", "ك", "ة"],
+        ["ء", "ظ", "ط", "ذ", "د", "ز", "ر", "و", "ى"]
+    ]
+
     private static func arabicLetters(_ c: LayoutContext) -> KeyboardLayout {
         let topHints = c.digitHints ? digits(c).primary : []
-        func row(_ letters: [String], hints: [String] = []) -> [KeyDef] {
+        func row(_ letters: [String], hints: [String] = [], pin: KeyPin = .free) -> [KeyDef] {
             letters.enumerated().map { item -> KeyDef in
                 var key = charKey(item.element, alternates: arabicAlternates[item.element] ?? [])
+                key.pin = pin
                 if item.offset < hints.count { key.hint = hints[item.offset] }
                 return key
             }
         }
-        let r1 = ["ض", "ص", "ث", "ق", "ف", "غ", "ع", "ه", "خ", "ح", "ج"]
-        let r2 = ["ش", "س", "ي", "ب", "ل", "ا", "ت", "ن", "م", "ك", "ط"]
-        let r3 = ["ذ", "ء", "ر", "ى", "ة", "و", "ز", "ظ", "د"]
-        return KeyboardLayout(rows: [row(r1, hints: topHints), row(r2), row(r3) + [deleteKey()], bottomRow(c)],
-                              columns: 11, rowScales: [1, 1, 1, 1])
+        // Third row: the nine letters start under the first column, delete sits alone on the right.
+        var delete = deleteKey()
+        delete.width = .points(49.3)
+        let rows = [
+            row(arabicRows[0], hints: topHints),
+            row(arabicRows[1]),
+            row(arabicRows[2], pin: .leading) + [delete],
+            arabicBottomRow(c)
+        ]
+        return KeyboardLayout(rows: rows, columns: 11, rowScales: [1, 1, 1, 1],
+                              gapScale: arabicGapScale, sideScale: arabicSideScale)
+    }
+
+    /// Measured from Apple's Arabic keyboard: ١٢٣ 48, emoji 48 (our EN key), space, ◌ً 48.3, return 102.3.
+    private static func arabicBottomRow(_ c: LayoutContext) -> [KeyDef] {
+        var row: [KeyDef] = [
+            KeyDef(action: .mode(.numbers), label: "١٢٣", width: .points(48), fontSize: 18),
+            KeyDef(action: .languageToggle, label: "EN", width: .points(48), fontSize: 17)
+        ]
+        if c.needsGlobe {
+            row.append(KeyDef(action: .nextKeyboard, symbol: "globe", width: .points(48)))
+        }
+        row.append(KeyDef(action: .space, width: .flexible, cornerLabel: c.language.spaceMarker))
+        row.append(KeyDef(action: .diacritics, label: "\u{25CC}\u{064B}", width: .points(48.3), fontSize: 24))
+        row.append(KeyDef(action: .returnKey, label: c.returnLabel ?? "",
+                          symbol: c.returnLabel == nil ? "return.right" : nil,
+                          width: .points(102.3), style: c.returnIsAccent ? .accent : .normal, fontSize: 17))
+        return row
     }
 
     private static func punctuationRow(_ arabic: Bool) -> [KeyDef] {
@@ -283,7 +331,7 @@ enum LayoutFactory {
         }
         row.append(KeyDef(action: .space, width: .flexible, cornerLabel: c.language.spaceMarker))
         row.append(KeyDef(action: .returnKey, label: c.returnLabel ?? "",
-                          symbol: c.returnLabel == nil ? "return.left" : nil,
+                          symbol: c.returnLabel == nil ? (arabic ? "return.right" : "return.left") : nil,
                           width: .baseUnits(2.5), style: c.returnIsAccent ? .accent : .normal, fontSize: 17))
         return row
     }

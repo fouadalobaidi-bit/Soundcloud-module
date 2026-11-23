@@ -30,6 +30,8 @@ final class KeyboardViewController: UIInputViewController {
     private var lastAutocorrect: (original: String, corrected: String, suffix: String)?
     private var revertOriginal: String?
     private var replacements: [String: String] = [:]
+    /// The ◌ً key put the diacritics in the suggestion bar; the next other key brings the suggestions back.
+    private var showingMarks = false
 
     private static let wordTerminators: Set<String> = [".", ",", "?", "!", ";", ":", "،", "؟", "؛", ")", "\""]
 
@@ -37,6 +39,7 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        settings.importPresetKeyIfNeeded()
         language = settings.language
 
         suggestionBar.translatesAutoresizingMaskIntoConstraints = false
@@ -89,6 +92,7 @@ final class KeyboardViewController: UIInputViewController {
         claude.cancel()
         gemini.cancel()
         personal.save()
+        showingMarks = false
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -154,6 +158,7 @@ final class KeyboardViewController: UIInputViewController {
                                     digitHints: settings.longPressDigits && !settings.numberRow)
         let layout = LayoutFactory.make(context)
         keyboardView.rightToLeft = language == .arabic
+        suggestionBar.rightToLeft = language == .arabic
         keyboardView.apply(layout: layout, palette: palette)
         let height = metrics.barHeight + metrics.keysHeight(layout)
         if let constraint = heightConstraint, abs(constraint.constant - height) > 0.5 {
@@ -469,6 +474,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func updateSuggestions() {
+        guard !showingMarks else { return }
         guard mode == .letters else {
             pendingCorrection = nil
             suggestionBar.showIdle()
@@ -556,6 +562,10 @@ final class KeyboardViewController: UIInputViewController {
 
 extension KeyboardViewController: KeyboardViewDelegate {
     func keyboardView(_ view: KeyboardView, keyDown key: KeyDef) {
+        if showingMarks, key.action != .diacritics {
+            showingMarks = false
+            updateSuggestions()
+        }
         switch key.action {
         case .delete:
             playFeedback(.delete)
@@ -588,6 +598,13 @@ extension KeyboardViewController: KeyboardViewDelegate {
             toggleLanguage()
         case .nextKeyboard:
             advanceToNextInputMode()
+        case .diacritics:
+            showingMarks.toggle()
+            if showingMarks {
+                suggestionBar.showMarks(LayoutFactory.arabicDiacritics)
+            } else {
+                updateSuggestions()
+            }
         case .shift, .delete:
             break
         }
@@ -637,6 +654,15 @@ extension KeyboardViewController: SuggestionBarDelegate {
         pendingCorrection = nil
         learnCommittedWord()
         afterInput()
+    }
+
+    /// Inserts only the mark and keeps the diacritics up, so shadda + fatha takes two taps.
+    func suggestionBar(_ bar: SuggestionBar, didSelectMark mark: String) {
+        playFeedback(.letter)
+        textDocumentProxy.insertText(mark)
+        lastAutocorrect = nil
+        revertOriginal = nil
+        pendingCorrection = nil
     }
 
     func suggestionBarDidTapSettings(_ bar: SuggestionBar) {

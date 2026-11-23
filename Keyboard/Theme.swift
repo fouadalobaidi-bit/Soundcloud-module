@@ -12,6 +12,10 @@ struct Palette {
     var accentFill: UIColor { .systemBlue }
     var text: UIColor { isDark ? .white : .black }
     var secondaryText: UIColor { isDark ? UIColor(white: 0.6, alpha: 1) : UIColor(white: 0.45, alpha: 1) }
+    /// Words in the suggestion bar (171/255 on Apple's dark keyboard); the one about to be used stays full white.
+    var suggestionText: UIColor { isDark ? UIColor(white: 171.0 / 255.0, alpha: 1) : .black }
+    /// The small "ع" in the corner of the Arabic space bar (132/255 on the dark keyboard).
+    var marker: UIColor { isDark ? UIColor(white: 132.0 / 255.0, alpha: 1) : UIColor(white: 0.45, alpha: 1) }
     var barIcon: UIColor { isDark ? UIColor(white: 0.69, alpha: 1) : UIColor(white: 0.42, alpha: 1) }
     var separator: UIColor { isDark ? UIColor(white: 0.21, alpha: 1) : UIColor(white: 0, alpha: 0.13) }
     var popupShadow: UIColor { UIColor(white: 0, alpha: isDark ? 0.5 : 0.25) }
@@ -33,41 +37,5 @@ struct Palette {
         case .active: return .black
         case .accent: return .white
         }
-    }
-}
-
-/// Geometry measured from Apple's iOS 26 keyboard on a 440 pt wide iPhone:
-/// 7 pt side margins, 6.67 pt between keys, 45 pt tall keys every 56 pt.
-struct Metrics {
-    var rowHeight: CGFloat
-    var verticalGap: CGFloat
-    var topInset: CGFloat
-    var bottomInset: CGFloat
-    var barHeight: CGFloat
-    var cornerRadius: CGFloat
-    /// Portrait scales margins and gaps with the screen width; landscape keeps them fixed.
-    var proportional: Bool
-
-    static let portrait = Metrics(rowHeight: 56, verticalGap: 11, topInset: 0, bottomInset: 2,
-                                  barHeight: 46, cornerRadius: 8.5, proportional: true)
-    static let landscape = Metrics(rowHeight: 42, verticalGap: 7, topInset: 0, bottomInset: 2,
-                                   barHeight: 38, cornerRadius: 7, proportional: false)
-
-    func sideInset(for width: CGFloat) -> CGFloat {
-        proportional ? width * 7 / 440 : 6
-    }
-
-    func horizontalGap(for width: CGFloat) -> CGFloat {
-        proportional ? width * 6.67 / 440 : 6
-    }
-
-    func rowHeights(_ layout: KeyboardLayout) -> [CGFloat] {
-        layout.rows.indices.map { i in
-            rowHeight * (i < layout.rowScales.count ? layout.rowScales[i] : 1)
-        }
-    }
-
-    func keysHeight(_ layout: KeyboardLayout) -> CGFloat {
-        topInset + rowHeights(layout).reduce(0, +) + bottomInset
     }
 }

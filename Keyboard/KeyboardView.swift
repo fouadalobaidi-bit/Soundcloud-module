@@ -94,22 +94,11 @@ final class KeyboardView: UIView {
         // Keep keys inside the safe area (rounded corners / notch in landscape).
         let insets = safeAreaInsets
         let usable = width - insets.left - insets.right
-        let side = m.sideInset(for: usable)
-        let gap = m.horizontalGap(for: usable)
-        let unit = (usable - 2 * side - (layout.columns - 1) * gap) / layout.columns
-        let baseUnit = (usable - 2 * side - 9 * gap) / 10
-        let heights = m.rowHeights(layout)
+        let geometry = KeyGeometry.layout(layout, metrics: m, width: usable)
         var all: [[CGRect]] = []
-        var bottoms: [CGFloat] = []
-        var y = m.topInset
-        for (i, row) in layout.rows.enumerated() {
-            let rowHeight = heights[i]
-            let rowFrames = Self.frames(for: row, width: usable, unit: unit, baseUnit: baseUnit, gap: gap, side: side,
-                                        y: y + m.verticalGap / 2, height: rowHeight - m.verticalGap)
-                .map { $0.offsetBy(dx: insets.left, dy: 0) }
+        for (i, row) in layout.rows.enumerated() where i < geometry.frames.count {
+            let rowFrames = geometry.frames[i].map { $0.offsetBy(dx: insets.left, dy: 0) }
             all.append(rowFrames)
-            y += rowHeight
-            bottoms.append(y)
             if i < keyViews.count {
                 for (j, f) in rowFrames.enumerated() where j < keyViews[i].count {
                     keyViews[i][j].frame = f
@@ -120,66 +109,11 @@ final class KeyboardView: UIView {
             }
         }
         frames = all
-        rowBottoms = bottoms
+        rowBottoms = geometry.rowBottoms
         // The preview bubble may rise into the suggestion bar, but never above the keyboard.
         let extra = m.barHeight
         overlay.frame = CGRect(x: 0, y: -extra, width: width, height: bounds.height + extra)
         bringSubviewToFront(overlay)
-    }
-
-    static func frames(for row: [KeyDef], width: CGFloat, unit: CGFloat, baseUnit: CGFloat,
-                       gap: CGFloat, side: CGFloat, y: CGFloat, height: CGFloat) -> [CGRect] {
-        func fixedWidth(_ k: KeyDef) -> CGFloat {
-            switch k.width {
-            case .units(let n): return n * unit + max(0, n - 1) * gap
-            case .baseUnits(let n): return n * baseUnit + max(0, n - 1) * gap
-            case .flexible: return 0
-            }
-        }
-        var result = Array(repeating: CGRect.zero, count: row.count)
-        let flexibleCount = row.filter { $0.width.isFlexible }.count
-
-        if flexibleCount > 0 {
-            let fixed = row.reduce(CGFloat(0)) { $0 + fixedWidth($1) }
-            let flex = max(0, (width - 2 * side - fixed - CGFloat(row.count - 1) * gap) / CGFloat(flexibleCount))
-            var x = side
-            for (i, k) in row.enumerated() {
-                let w = k.width.isFlexible ? flex : fixedWidth(k)
-                result[i] = CGRect(x: x, y: y, width: w, height: height)
-                x += w + gap
-            }
-            return result
-        }
-
-        var leftEdge = side
-        var rightEdge = width - side
-        for (i, k) in row.enumerated() where k.pin == .leading {
-            let w = fixedWidth(k)
-            result[i] = CGRect(x: leftEdge, y: y, width: w, height: height)
-            leftEdge += w + gap
-        }
-        for (i, k) in row.enumerated().reversed() where k.pin == .trailing {
-            let w = fixedWidth(k)
-            rightEdge -= w
-            result[i] = CGRect(x: rightEdge, y: y, width: w, height: height)
-            rightEdge -= gap
-        }
-        let middle = row.indices.filter { row[$0].pin == .free }
-        let widths = middle.map { fixedWidth(row[$0]) }
-        var total = widths.reduce(0, +) + CGFloat(max(0, middle.count - 1)) * gap
-        let available = max(0, rightEdge - leftEdge)
-        var scale: CGFloat = 1
-        if total > available, total > 0 {
-            scale = available / total
-            total = available
-        }
-        var x = leftEdge + (available - total) / 2
-        for (n, i) in middle.enumerated() {
-            let w = widths[n] * scale
-            result[i] = CGRect(x: x, y: y, width: w, height: height)
-            x += w + gap * scale
-        }
-        return result
     }
 
     // MARK: - Hit testing

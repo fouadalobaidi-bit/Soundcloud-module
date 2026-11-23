@@ -132,6 +132,36 @@ final class KeyboardSettings {
         set { defaults.set(newValue, forKey: "claudeLastError") }
     }
 
+    // MARK: Built-in key
+
+    /// A private copy of the keyboard can carry a Gemini key in Preset.plist (it is never in the public code).
+    /// It is copied into the settings once. "مسح المفتاح" removes it for good: the same key is not imported again.
+    func importPresetKeyIfNeeded(bundle: Bundle = .main) {
+        guard let url = bundle.url(forResource: "Preset", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
+              let raw = plist["geminiKey"] as? String else { return }
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        let stamp = Self.fingerprint(key)
+        guard defaults.string(forKey: "presetKeyImported") != stamp else { return }
+        defaults.set(stamp, forKey: "presetKeyImported")
+        geminiKey = key
+        aiProvider = .gemini
+        aiEnabled = true
+        aiLastError = nil
+    }
+
+    /// The Gemini key in use is the one that came with the app.
+    var usesPresetKey: Bool {
+        !geminiKey.isEmpty && defaults.string(forKey: "presetKeyImported") == Self.fingerprint(geminiKey)
+    }
+
+    /// Enough to recognise the key again without keeping a second copy of it.
+    private static func fingerprint(_ key: String) -> String {
+        "\(key.count):" + String(key.suffix(6))
+    }
+
     private var today: String {
         String(Int(Date().timeIntervalSince1970 / 86_400))
     }

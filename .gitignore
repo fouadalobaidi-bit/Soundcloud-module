@@ -3,3 +3,5 @@ build/
 Payload/
 *.ipa
 .DS_Store
+# Private per-user keys are added to the IPA after the build, never committed.
+Preset.plist

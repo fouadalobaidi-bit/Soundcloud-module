@@ -117,12 +117,18 @@ final class SettingsPanel: UIView {
         button("تجربة الاتصال") { [weak self] in self?.testKey() }
         button("مسح المفتاح", destructive: true) { [weak self] in
             guard let self else { return }
+            let wasPreset = self.settings.aiProvider == .gemini && self.settings.usesPresetKey
             if self.settings.aiProvider == .gemini {
                 self.settings.geminiKey = ""
             } else {
                 self.settings.claudeKey = ""
             }
+            self.settings.aiLastError = nil
             self.updateKeyStatus()
+            if wasPreset {
+                self.keyStatus.text = "انشال المفتاح المدمج وما راح يرجع، إلا إذا لصقته بنفسك من جديد.\n"
+                    + (self.keyStatus.text ?? "")
+            }
         }
         keyStatus.font = .systemFont(ofSize: 13)
         keyStatus.textColor = palette.secondaryText
@@ -223,8 +229,10 @@ final class SettingsPanel: UIView {
         if key.isEmpty {
             lines.append(gemini ? "ماكو مفتاح Gemini." : "ماكو مفتاح Claude.")
         } else {
-            lines.append((gemini ? "مفتاح Gemini: " : "مفتاح Claude: ") + String(key.prefix(6)) + "…" + String(key.suffix(4)))
+            let name = gemini ? (settings.usesPresetKey ? "مفتاح Gemini (المدمج بالتطبيق): " : "مفتاح Gemini: ") : "مفتاح Claude: "
+            lines.append(name + String(key.prefix(6)) + "…" + String(key.suffix(4)))
             lines.append("الموديل: " + (gemini ? settings.geminiModel : settings.claudeModel))
+            if !settings.aiEnabled { lines.append("الاقتراحات الذكية مطفية، شغّلها من الزر فوق.") }
         }
         lines.append("طلبات اليوم: \(settings.aiUsageToday) من \(KeyboardSettings.aiDailyLimit)")
         if let error = settings.aiLastError, !error.isEmpty {
@@ -239,14 +247,15 @@ final class SettingsPanel: UIView {
             return
         }
         let text = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if text.hasPrefix("AIza") {
+        // Google keys start with AIza (older) or AQ. (newer).
+        if text.hasPrefix("AIza") || text.hasPrefix("AQ.") {
             settings.geminiKey = text
             settings.aiProvider = .gemini
         } else if text.hasPrefix("sk-ant-") {
             settings.claudeKey = text
             settings.aiProvider = .claude
         } else {
-            keyStatus.text = "الحافظة ما بيها مفتاح Gemini (يبدي بـ AIza) أو Claude (يبدي بـ sk-ant-). انسخه وارجع اضغط لصق."
+            keyStatus.text = "الحافظة ما بيها مفتاح Gemini (يبدي بـ AIza أو AQ.) أو Claude (يبدي بـ sk-ant-). انسخه وارجع اضغط لصق."
             return
         }
         providerControl.selectedSegmentIndex = settings.aiProvider == .gemini ? 0 : 1
