@@ -6,6 +6,10 @@ final class KeyboardViewController: UIInputViewController {
     private let suggestionBar = SuggestionBar()
     private lazy var engine = SuggestionEngine()
     private lazy var feedback = KeyFeedback()
+    private lazy var personal = PersonalModel()
+    private lazy var claude = ClaudeClient()
+    private var claudeTimer: Timer?
+    private var claudeResult: (key: String, items: [String])?
 
     private var language: KeyboardLanguage = .arabic
     private var mode: KeyboardMode = .letters
@@ -78,6 +82,13 @@ final class KeyboardViewController: UIInputViewController {
         refreshAll()
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        claudeTimer?.invalidate()
+        claude.cancel()
+        personal.save()
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         // iOS delays touches near the screen edges for its own gestures; keys at the edges feel laggy without this.
@@ -137,7 +148,8 @@ final class KeyboardViewController: UIInputViewController {
                                     needsGlobe: needsInputModeSwitchKey,
                                     returnLabel: ret.label, returnIsAccent: ret.accent,
                                     arabicDigits: settings.arabicDigits,
-                                    numberRow: settings.numberRow)
+                                    numberRow: settings.numberRow,
+                                    digitHints: settings.longPressDigits && !settings.numberRow)
         let layout = LayoutFactory.make(context)
         keyboardView.rightToLeft = language == .arabic
         keyboardView.apply(layout: layout, palette: palette)
@@ -235,12 +247,14 @@ final class KeyboardViewController: UIInputViewController {
 
     private func insertCharacter(_ text: String) {
         revertOriginal = nil
-        if Self.wordTerminators.contains(text), applyPendingCorrection(suffix: text) {
+        let terminator = Self.wordTerminators.contains(text)
+        if terminator, applyPendingCorrection(suffix: text) {
             // Correction and the punctuation were inserted together.
         } else {
             textDocumentProxy.insertText(text)
             lastAutocorrect = nil
         }
+        if terminator { learnCommittedWord() }
         var needsReload = false
         if shift == .on {
             shift = .off
@@ -272,6 +286,7 @@ final class KeyboardViewController: UIInputViewController {
             textDocumentProxy.insertText(" ")
             lastAutocorrect = nil
         }
+        learnCommittedWord()
         if mode != .letters, before.last?.isNumber != true {
             mode = .letters
             reloadKeyboard()
@@ -285,6 +300,7 @@ final class KeyboardViewController: UIInputViewController {
             textDocumentProxy.insertText("\n")
             lastAutocorrect = nil
         }
+        learnCommittedWord()
         afterInput()
     }
 
@@ -331,6 +347,99 @@ final class KeyboardViewController: UIInputViewController {
     private func afterInput() {
         updateAutoShift()
         updateSuggestions()
+        scheduleClaude()
+    }
+
+    // MARK: - Learning
+
+    /// Remembers the word that was just finished (and the one before it) on the phone.
+    private func learnCommittedWord() {
+        guard mode == .letters || mode == .numbers else { return }
+        let type = textDocumentProxy.keyboardType ?? .default
+        guard type != .emailAddress, type != .URL else { return }
+        let words = Self.lastTwoWords(in: textDocumentProxy.documentContextBeforeInput ?? "")
+        if let last = words.last {
+            personal.learn(word: last, previous: words.previous)
+        }
+    }
+
+    /// The last word before the cursor and the word before it (nil across a sentence end).
+    static func lastTwoWords(in text: String) -> (previous: String?, last: String?) {
+        var words: [String] = []
+        var current: [Character] = []
+        var boundary = false
+        for ch in text.reversed() {
+            if ch.isLetter || ch == "'" || ch == "’" {
+                current.append(ch)
+                continue
+            }
+            if !current.isEmpty {
+                words.append(String(current.reversed()))
+                current.removeAll()
+                if words.count == 2 { break }
+            }
+            if !words.isEmpty, ".!?؟\n".contains(ch) {
+                boundary = true
+                break
+            }
+        }
+        if !current.isEmpty, words.count < 2 {
+            words.append(String(current.reversed()))
+        }
+        let last = words.first
+        let previous = (words.count > 1 && !boundary) ? words[1] : nil
+        return (previous, last)
+    }
+
+    private static func unique(_ items: [String], excluding: String? = nil) -> [String] {
+        var seen = Set<String>()
+        if let excluding { seen.insert(excluding) }
+        return items.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    // MARK: - Claude
+
+    private func claudeAllowed() -> Bool {
+        guard settings.claudeEnabled, !settings.claudeKey.isEmpty, hasFullAccess, mode == .letters else { return false }
+        let type = textDocumentProxy.keyboardType ?? .default
+        let blocked: [UIKeyboardType] = [.emailAddress, .URL, .numberPad, .decimalPad, .phonePad, .asciiCapableNumberPad]
+        guard !blocked.contains(type) else { return false }
+        return settings.claudeUsageToday < KeyboardSettings.claudeDailyLimit
+    }
+
+    private func claudeContext() -> String {
+        String((textDocumentProxy.documentContextBeforeInput ?? "").suffix(300))
+    }
+
+    private func scheduleClaude() {
+        claudeTimer?.invalidate()
+        claudeTimer = nil
+        guard claudeAllowed() else { return }
+        // Ask only when the typing pauses, so fast typing doesn't send a request per letter.
+        claudeTimer = Timer.scheduledTimer(timeInterval: 0.35, target: self, selector: #selector(fireClaude),
+                                           userInfo: nil, repeats: false)
+    }
+
+    @objc private func fireClaude() {
+        guard claudeAllowed() else { return }
+        let context = claudeContext()
+        guard !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if claudeResult?.key == context { return }
+        settings.recordClaudeRequest()
+        claude.suggest(context: context, partialWord: currentWord(), vocabulary: personal.topWords(60),
+                       model: settings.claudeModel, apiKey: settings.claudeKey) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let items):
+                self.settings.claudeLastError = nil
+                self.claudeResult = (key: context, items: items)
+                if self.claudeContext() == context { self.updateSuggestions() }
+            case .failure(let error):
+                if !ClaudeClient.isCancellation(error) {
+                    self.settings.claudeLastError = error.localizedDescription
+                }
+            }
+        }
     }
 
     private func updateSuggestions() {
@@ -340,12 +449,21 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
         let word = currentWord()
+        let claudeItems = claudeResult?.key == claudeContext() ? (claudeResult?.items ?? []) : []
         guard !word.isEmpty else {
             pendingCorrection = nil
-            suggestionBar.showIdle()
+            showPredictions(claudeItems: claudeItems)
             return
         }
-        var result = engine.suggest(for: word, language: language, replacements: replacements)
+        var result = engine.suggest(for: word, language: language, replacements: replacements, personal: personal)
+        if !claudeItems.isEmpty {
+            // Keep a real autocorrection first, then Claude's picks, then the local ones.
+            var merged: [String] = []
+            if let correction = result.correction { merged.append(correction) }
+            merged += claudeItems.map { SuggestionEngine.matchCase($0, to: word) }
+            merged += result.candidates
+            result.candidates = Self.unique(merged, excluding: word)
+        }
         if let original = revertOriginal, original != word {
             result.candidates.removeAll { $0 == original }
             result.candidates.insert(original, at: 0)
@@ -359,14 +477,35 @@ final class KeyboardViewController: UIInputViewController {
                            quoteTyped: result.isMisspelled || pendingCorrection != nil)
     }
 
+    /// Between words: Claude's next-word picks first, then the ones learned from the user.
+    private func showPredictions(claudeItems: [String]) {
+        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        var items = claudeItems
+        if before.last == " ", let previous = Self.lastTwoWords(in: before).last {
+            items += personal.nextWords(after: previous, limit: 3)
+        }
+        var predictions = Array(Self.unique(items).prefix(3))
+        if shift == .on {
+            predictions = predictions.map { $0.prefix(1).uppercased() + String($0.dropFirst()) }
+        }
+        if predictions.isEmpty {
+            suggestionBar.showIdle()
+        } else {
+            suggestionBar.showPredictions(predictions)
+        }
+    }
+
     private func playFeedback(_ kind: KeyFeedback.Sound, haptic: Bool = true) {
         let allowed = hasFullAccess
-        feedback.play(kind, haptics: haptic && allowed && settings.haptics, audio: allowed && settings.sound)
+        let s = settings
+        feedback.play(kind, haptics: haptic && allowed && s.haptics, strength: s.hapticStrength,
+                      audio: allowed && s.sound, volume: s.soundVolume, systemSound: s.systemSound)
     }
 
     private func openSettings() {
         guard settingsPanel == nil else { return }
-        let panel = SettingsPanel(settings: settings, palette: palette, hasFullAccess: hasFullAccess)
+        let panel = SettingsPanel(settings: settings, palette: palette, hasFullAccess: hasFullAccess,
+                                  claude: claude, personal: personal)
         panel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(panel)
         NSLayoutConstraint.activate([
@@ -379,6 +518,7 @@ final class KeyboardViewController: UIInputViewController {
             guard let self else { return }
             self.settingsPanel?.removeFromSuperview()
             self.settingsPanel = nil
+            self.claudeResult = nil
             self.reloadKeyboard()
             self.updateSuggestions()
         }
@@ -443,6 +583,7 @@ extension KeyboardViewController: KeyboardViewDelegate {
         textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
         lastAutocorrect = nil
         updateSuggestions()
+        scheduleClaude()
     }
 
     func keyboardViewDidLongPressLanguage(_ view: KeyboardView) {
@@ -468,6 +609,7 @@ extension KeyboardViewController: SuggestionBarDelegate {
         revertOriginal = nil
         lastAutocorrect = nil
         pendingCorrection = nil
+        learnCommittedWord()
         afterInput()
     }
 

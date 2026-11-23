@@ -5,6 +5,7 @@ final class KeyView: UIView {
     private let label = UILabel()
     private let imageView = UIImageView()
     private let cornerLabel = UILabel()
+    private let hintLabel = UILabel()
     private var palette: Palette
 
     var isHighlighted = false {
@@ -34,6 +35,10 @@ final class KeyView: UIView {
         cornerLabel.textAlignment = .right
         addSubview(cornerLabel)
 
+        hintLabel.font = .systemFont(ofSize: 10.5, weight: .medium)
+        hintLabel.textAlignment = .center
+        addSubview(hintLabel)
+
         configureContent()
         applyAppearance()
     }
@@ -50,12 +55,16 @@ final class KeyView: UIView {
             label.isHidden = true
         } else {
             label.text = def.label
-            label.font = .systemFont(ofSize: def.fontSize ?? defaultFontSize(), weight: labelWeight())
+            // Leave room for the small digit when the key carries one.
+            let size = def.fontSize ?? defaultFontSize()
+            label.font = .systemFont(ofSize: def.hint == nil ? size : size - 3, weight: labelWeight())
             imageView.isHidden = true
             label.isHidden = def.label.isEmpty
         }
         cornerLabel.text = def.cornerLabel
         cornerLabel.isHidden = def.cornerLabel == nil
+        hintLabel.text = def.hint
+        hintLabel.isHidden = def.hint == nil
     }
 
     private func labelWeight() -> UIFont.Weight {
@@ -77,13 +86,15 @@ final class KeyView: UIView {
         label.textColor = color
         imageView.tintColor = color
         cornerLabel.textColor = palette.secondaryText
+        hintLabel.textColor = palette.secondaryText
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // Apple sits letters a touch above the geometric centre.
-        let nudge: CGFloat = def.action.isCharacter ? -1 : 0
+        // Apple sits letters a touch above the geometric centre; with a digit hint they move up more.
+        let nudge: CGFloat = def.hint != nil ? -6 : (def.action.isCharacter ? -1 : 0)
         label.frame = bounds.insetBy(dx: 3, dy: 0).offsetBy(dx: 0, dy: nudge)
+        hintLabel.frame = CGRect(x: 0, y: bounds.maxY - 15, width: bounds.width, height: 12)
         imageView.frame = bounds
         cornerLabel.frame = CGRect(x: bounds.maxX - 22, y: bounds.maxY - 18, width: 17, height: 14)
     }

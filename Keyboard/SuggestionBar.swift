@@ -74,7 +74,20 @@ final class SuggestionBar: UIView {
         let positions: [Int] = list.count == 1 ? [1] : Array(0..<min(3, list.count))
         slots = [nil, nil, nil]
         for (n, slot) in positions.enumerated() { slots[slot] = list[n] }
+        render(quoteTyped: quoteTyped)
+    }
 
+    /// Next-word predictions: up to three words, nothing typed yet.
+    func showPredictions(_ words: [String]) {
+        slots = [nil, nil, nil]
+        let positions: [Int] = words.count == 1 ? [1] : Array(0..<min(3, words.count))
+        for (n, slot) in positions.enumerated() {
+            slots[slot] = Entry(text: words[n], isTyped: false, highlighted: false)
+        }
+        render(quoteTyped: false)
+    }
+
+    private func render(quoteTyped: Bool) {
         for (i, b) in buttons.enumerated() {
             if let e = slots[i] {
                 let title = (e.isTyped && quoteTyped) ? "“\(e.text)”" : e.text

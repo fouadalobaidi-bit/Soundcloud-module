@@ -286,8 +286,8 @@ final class KeyboardView: UIView {
                     if case .character(let text) = hit.0.action, hit.0.showsPopup {
                         showPreview(text, for: track)
                     }
-                    if !hit.0.alternates.isEmpty {
-                        schedule(track, .alternates, after: 0.4)
+                    if Self.hasLongPress(hit.0) {
+                        schedule(track, .alternates, after: 0.35)
                     }
                 }
             }
@@ -341,7 +341,7 @@ final class KeyboardView: UIView {
         switch track.key.action {
         case .character(let text):
             if track.key.showsPopup { showPreview(text, for: track) }
-            if !track.key.alternates.isEmpty { schedule(track, .alternates, after: 0.4) }
+            if Self.hasLongPress(track.key) { schedule(track, .alternates, after: 0.35) }
         case .delete:
             schedule(track, .deleteRepeat, after: 0.45)
         case .space:
@@ -387,8 +387,15 @@ final class KeyboardView: UIView {
         overlay.showPreview(text, keyFrame: convert(track.keyFrame, to: overlay), palette: palette, metrics: metrics)
     }
 
+    private static func hasLongPress(_ key: KeyDef) -> Bool {
+        !key.alternates.isEmpty || key.hint != nil
+    }
+
+    /// What the long-press panel offers. A key with a digit hint puts the digit first
+    /// and selects it, so long-press + release types the number.
     private func alternateItems(for key: KeyDef) -> [String] {
         guard case .character(let base) = key.action else { return key.alternates }
+        if let hint = key.hint { return [hint, base] + key.alternates }
         return [base] + key.alternates
     }
 
@@ -399,7 +406,9 @@ final class KeyboardView: UIView {
         overlayOwner = track
         let items = alternateItems(for: track.key)
         overlay.showAlternates(items, keyFrame: convert(track.keyFrame, to: overlay), palette: palette, metrics: metrics)
-        track.selectedAlternate = overlay.alternateIndex(at: track.keyFrame.midX, count: items.count)
+        track.selectedAlternate = track.key.hint != nil
+            ? 0
+            : overlay.alternateIndex(at: track.keyFrame.midX, count: items.count)
         overlay.selectAlternate(track.selectedAlternate)
     }
 

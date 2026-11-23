@@ -66,6 +66,8 @@ struct KeyDef {
     var showsPopup: Bool = false
     var fontSize: CGFloat? = nil
     var cornerLabel: String? = nil
+    /// Small secondary character shown at the bottom of the key; a long press types it.
+    var hint: String? = nil
 }
 
 struct KeyboardLayout {
@@ -85,6 +87,8 @@ struct LayoutContext {
     var returnIsAccent: Bool
     var arabicDigits: Bool
     var numberRow: Bool
+    /// Long-press the top-row letters to type digits (iPad style hint inside the key).
+    var digitHints: Bool
 }
 
 enum LayoutFactory {
@@ -184,12 +188,15 @@ enum LayoutFactory {
 
     private static func englishLetters(_ c: LayoutContext) -> KeyboardLayout {
         let upper = c.shift != .off
-        func row(_ s: String) -> [KeyDef] {
-            s.map { ch -> KeyDef in
-                let lower = String(ch)
+        let topHints = c.digitHints ? digits(c).primary : []
+        func row(_ s: String, hints: [String] = []) -> [KeyDef] {
+            s.enumerated().map { item -> KeyDef in
+                let lower = String(item.element)
                 let shown = upper ? lower.uppercased() : lower
                 let alts = (englishAlternates[lower] ?? []).map { upper ? $0.uppercased() : $0 }
-                return charKey(shown, alternates: alts)
+                var key = charKey(shown, alternates: alts)
+                if item.offset < hints.count { key.hint = hints[item.offset] }
+                return key
             }
         }
         let shiftSymbol: String
@@ -204,18 +211,23 @@ enum LayoutFactory {
         ]
         r3 += row("zxcvbnm")
         r3.append(deleteKey())
-        return KeyboardLayout(rows: [row("qwertyuiop"), row("asdfghjkl"), r3, bottomRow(c)],
+        return KeyboardLayout(rows: [row("qwertyuiop", hints: topHints), row("asdfghjkl"), r3, bottomRow(c)],
                               columns: 10, rowScales: [1, 1, 1, 1])
     }
 
     private static func arabicLetters(_ c: LayoutContext) -> KeyboardLayout {
-        func row(_ letters: [String]) -> [KeyDef] {
-            letters.map { charKey($0, alternates: arabicAlternates[$0] ?? []) }
+        let topHints = c.digitHints ? digits(c).primary : []
+        func row(_ letters: [String], hints: [String] = []) -> [KeyDef] {
+            letters.enumerated().map { item -> KeyDef in
+                var key = charKey(item.element, alternates: arabicAlternates[item.element] ?? [])
+                if item.offset < hints.count { key.hint = hints[item.offset] }
+                return key
+            }
         }
         let r1 = ["ض", "ص", "ث", "ق", "ف", "غ", "ع", "ه", "خ", "ح", "ج"]
         let r2 = ["ش", "س", "ي", "ب", "ل", "ا", "ت", "ن", "م", "ك", "ط"]
         let r3 = ["ذ", "ء", "ر", "ى", "ة", "و", "ز", "ظ", "د"]
-        return KeyboardLayout(rows: [row(r1), row(r2), row(r3) + [deleteKey()], bottomRow(c)],
+        return KeyboardLayout(rows: [row(r1, hints: topHints), row(r2), row(r3) + [deleteKey()], bottomRow(c)],
                               columns: 11, rowScales: [1, 1, 1, 1])
     }
 

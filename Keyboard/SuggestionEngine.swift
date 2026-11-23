@@ -46,20 +46,23 @@ final class SuggestionEngine {
         learned.contains(word.lowercased())
     }
 
-    func suggest(for word: String, language: KeyboardLanguage, replacements: [String: String]) -> SuggestionResult {
+    func suggest(for word: String, language: KeyboardLanguage, replacements: [String: String],
+                 personal: PersonalModel) -> SuggestionResult {
         var result = SuggestionResult(typed: word, candidates: [], correction: nil, isMisspelled: false)
         let replacement = replacements[word.lowercased()]
+        // The user's own words come first.
+        let personalCompletions = personal.completions(for: word, limit: 3).map { Self.matchCase($0, to: word) }
 
         if let code = languageCode(for: language) {
             let range = NSRange(location: 0, length: (word as NSString).length)
             let miss = checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: code)
-            let misspelled = miss.location != NSNotFound && !isLearned(word)
+            let misspelled = miss.location != NSNotFound && !isLearned(word) && !personal.knows(word)
             result.isMisspelled = misspelled
 
             var candidates: [String] = []
             if misspelled {
                 let guesses = (checker.guesses(forWordRange: range, in: word, language: code) ?? [])
-                    .map { matchCase($0, to: word) }
+                    .map { Self.matchCase($0, to: word) }
                 if let best = guesses.first, word.count >= 2,
                    Self.distance(best.lowercased(), word.lowercased()) <= max(1, word.count / 3) {
                     result.correction = best
@@ -67,10 +70,11 @@ final class SuggestionEngine {
                 candidates += guesses
             }
             let completions = (checker.completions(forPartialWordRange: range, in: word, language: code) ?? [])
-                .map { matchCase($0, to: word) }
+                .map { Self.matchCase($0, to: word) }
             candidates += completions
             result.candidates = candidates
         }
+        result.candidates = personalCompletions + result.candidates
 
         if let replacement {
             result.correction = replacement
@@ -87,7 +91,7 @@ final class SuggestionEngine {
         return result
     }
 
-    private func matchCase(_ candidate: String, to word: String) -> String {
+    static func matchCase(_ candidate: String, to word: String) -> String {
         guard let first = word.first, first.isUppercase else { return candidate }
         if word.count > 1, word == word.uppercased() { return candidate.uppercased() }
         return candidate.prefix(1).uppercased() + String(candidate.dropFirst())
