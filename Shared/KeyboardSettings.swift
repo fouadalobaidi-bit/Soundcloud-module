@@ -1,18 +1,40 @@
-import UIKit
+import Foundation
 
 enum AIProvider: String {
     case gemini, claude
 }
 
-/// Settings live in the keyboard's own storage on the phone.
+/// Settings, used by both the keyboard and the app. Stored through SharedStore, so a change made in
+/// the app reaches the keyboard, and everything comes back after installing a new version.
 @MainActor
 final class KeyboardSettings {
     static let shared = KeyboardSettings()
     static let aiDailyLimit = 1000
-    private let defaults = UserDefaults.standard
+
+    /// What SharedStore copies between the app and the keyboard. The language and the model that last
+    /// answered stay local, so typing never waits on the keychain.
+    static let syncedKeys: Set<String> = [
+        "numberRow", "longPressDigits", "haptics", "hapticStrength", "sound", "soundVolume", "systemSound",
+        "autocorrectEnglish", "autocorrectArabic", "arabicDigits",
+        "claudeEnabled", "aiProvider", "claudeUseSonnet", "claudeKey", "geminiKey", "presetKeyImported"
+    ]
+
+    private var store: SharedStore { SharedStore.shared }
+    private var defaults: UserDefaults { store.defaults }
 
     private func bool(_ key: String, _ fallback: Bool) -> Bool {
         defaults.object(forKey: key) as? Bool ?? fallback
+    }
+
+    /// Saves a value and, for shared settings, tells SharedStore. Unchanged values are ignored.
+    private func write(_ value: Any, _ key: String) {
+        if let old = defaults.object(forKey: key) as? NSObject, let new = value as? NSObject, old.isEqual(new) {
+            return
+        }
+        defaults.set(value, forKey: key)
+        if Self.syncedKeys.contains(key) {
+            store.settingChanged(key)
+        }
     }
 
     private func float(_ key: String, _ fallback: Float) -> Float {
@@ -23,74 +45,74 @@ final class KeyboardSettings {
 
     var numberRow: Bool {
         get { bool("numberRow", false) }
-        set { defaults.set(newValue, forKey: "numberRow") }
+        set { write(newValue, "numberRow") }
     }
 
     var longPressDigits: Bool {
         get { bool("longPressDigits", true) }
-        set { defaults.set(newValue, forKey: "longPressDigits") }
+        set { write(newValue, "longPressDigits") }
     }
 
     // MARK: Feedback
 
     var haptics: Bool {
         get { bool("haptics", true) }
-        set { defaults.set(newValue, forKey: "haptics") }
+        set { write(newValue, "haptics") }
     }
 
     var hapticStrength: Float {
         get { float("hapticStrength", 0.7) }
-        set { defaults.set(newValue, forKey: "hapticStrength") }
+        set { write(newValue, "hapticStrength") }
     }
 
     var sound: Bool {
         get { bool("sound", true) }
-        set { defaults.set(newValue, forKey: "sound") }
+        set { write(newValue, "sound") }
     }
 
     var soundVolume: Float {
         get { float("soundVolume", 1.0) }
-        set { defaults.set(newValue, forKey: "soundVolume") }
+        set { write(newValue, "soundVolume") }
     }
 
     /// Play Apple's system click instead of our adjustable one.
     var systemSound: Bool {
         get { bool("systemSound", false) }
-        set { defaults.set(newValue, forKey: "systemSound") }
+        set { write(newValue, "systemSound") }
     }
 
     // MARK: Typing
 
     var autocorrectEnglish: Bool {
         get { bool("autocorrectEnglish", true) }
-        set { defaults.set(newValue, forKey: "autocorrectEnglish") }
+        set { write(newValue, "autocorrectEnglish") }
     }
 
     var autocorrectArabic: Bool {
         get { bool("autocorrectArabic", false) }
-        set { defaults.set(newValue, forKey: "autocorrectArabic") }
+        set { write(newValue, "autocorrectArabic") }
     }
 
     var arabicDigits: Bool {
         get { bool("arabicDigits", false) }
-        set { defaults.set(newValue, forKey: "arabicDigits") }
+        set { write(newValue, "arabicDigits") }
     }
 
     var language: KeyboardLanguage {
         get { KeyboardLanguage(rawValue: defaults.string(forKey: "language") ?? "") ?? .arabic }
-        set { defaults.set(newValue.rawValue, forKey: "language") }
+        set { write(newValue.rawValue, "language") }
     }
 
     // MARK: AI suggestions
 
     var aiEnabled: Bool {
         get { bool("claudeEnabled", false) }
-        set { defaults.set(newValue, forKey: "claudeEnabled") }
+        set { write(newValue, "claudeEnabled") }
     }
 
     var aiProvider: AIProvider {
         get { AIProvider(rawValue: defaults.string(forKey: "aiProvider") ?? "") ?? .gemini }
-        set { defaults.set(newValue.rawValue, forKey: "aiProvider") }
+        set { write(newValue.rawValue, "aiProvider") }
     }
 
     /// The key for whichever provider is selected.
@@ -100,7 +122,7 @@ final class KeyboardSettings {
 
     var claudeUseSonnet: Bool {
         get { bool("claudeUseSonnet", false) }
-        set { defaults.set(newValue, forKey: "claudeUseSonnet") }
+        set { write(newValue, "claudeUseSonnet") }
     }
 
     var claudeModel: String {
@@ -109,27 +131,33 @@ final class KeyboardSettings {
 
     var claudeKey: String {
         get { defaults.string(forKey: "claudeKey") ?? "" }
-        set { defaults.set(newValue, forKey: "claudeKey") }
+        set { write(newValue, "claudeKey") }
     }
 
     var geminiKey: String {
         get { defaults.string(forKey: "geminiKey") ?? "" }
-        set { defaults.set(newValue, forKey: "geminiKey") }
+        set { write(newValue, "geminiKey") }
     }
 
     var geminiModel: String {
         get { defaults.string(forKey: "geminiModel") ?? GeminiClient.defaultModel }
-        set { defaults.set(newValue, forKey: "geminiModel") }
+        set { write(newValue, "geminiModel") }
     }
 
     var geminiMinimalThinking: Bool {
         get { bool("geminiMinimalThinking", true) }
-        set { defaults.set(newValue, forKey: "geminiMinimalThinking") }
+        set { write(newValue, "geminiMinimalThinking") }
     }
 
     var aiLastError: String? {
         get { defaults.string(forKey: "claudeLastError") }
-        set { defaults.set(newValue, forKey: "claudeLastError") }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: "claudeLastError")
+            } else {
+                defaults.removeObject(forKey: "claudeLastError")
+            }
+        }
     }
 
     // MARK: Built-in key
@@ -145,7 +173,7 @@ final class KeyboardSettings {
         guard !key.isEmpty else { return }
         let stamp = Self.fingerprint(key)
         guard defaults.string(forKey: "presetKeyImported") != stamp else { return }
-        defaults.set(stamp, forKey: "presetKeyImported")
+        write(stamp, "presetKeyImported")
         geminiKey = key
         aiProvider = .gemini
         aiEnabled = true

@@ -39,8 +39,15 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // Settings and learned words saved by the app or by an earlier install come in first.
+        SharedStore.shared.pull()
         settings.importPresetKeyIfNeeded()
         language = settings.language
+        if #available(iOS 17.0, *) {
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (controller: KeyboardViewController, _: UITraitCollection) in
+                controller.updateAppearanceIfNeeded()
+            }
+        }
 
         suggestionBar.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.translatesAutoresizingMaskIntoConstraints = false
@@ -83,6 +90,10 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // Changes made in the app since the keyboard was last open.
+        if SharedStore.shared.pull().contains(.words) {
+            personal.reload()
+        }
         refreshAll()
     }
 
@@ -92,6 +103,7 @@ final class KeyboardViewController: UIInputViewController {
         claude.cancel()
         gemini.cancel()
         personal.save()
+        SharedStore.shared.flush()
         showingMarks = false
     }
 
@@ -99,10 +111,21 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidAppear(animated)
         // iOS delays touches near the screen edges for its own gestures; keys at the edges feel laggy without this.
         view.window?.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
+        // After switching apps iOS can hand over the new app's light/dark look a moment late.
+        updateAppearanceIfNeeded()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.updateAppearanceIfNeeded()
+        }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        updateAppearanceIfNeeded()
     }
 
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
+        updateAppearanceIfNeeded()
         let landscape = traitCollection.verticalSizeClass == .compact
         let target = landscape ? Metrics.landscape : Metrics.portrait
         guard target.rowHeight != metrics.rowHeight else { return }
@@ -124,10 +147,26 @@ final class KeyboardViewController: UIInputViewController {
 
     // MARK: - State
 
-    private func refreshAll() {
-        let appearance = textDocumentProxy.keyboardAppearance ?? .default
-        let dark = appearance == .dark || (appearance != .light && traitCollection.userInterfaceStyle == .dark)
+    /// Dark keys on a dark keyboard: the app's own choice first, then the look iOS gives the keyboard.
+    private var isDarkNow: Bool {
+        switch textDocumentProxy.keyboardAppearance ?? .default {
+        case .dark: return true
+        case .light: return false
+        default: return traitCollection.userInterfaceStyle == .dark
+        }
+    }
+
+    /// Repaints only when light/dark actually changed, so it is cheap to call often.
+    private func updateAppearanceIfNeeded() {
+        let dark = isDarkNow
+        guard dark != palette.isDark else { return }
         palette = Palette(isDark: dark)
+        suggestionBar.setPalette(palette)
+        reloadKeyboard()
+    }
+
+    private func refreshAll() {
+        palette = Palette(isDark: isDarkNow)
         suggestionBar.setPalette(palette)
 
         let type = textDocumentProxy.keyboardType ?? .default
@@ -153,7 +192,7 @@ final class KeyboardViewController: UIInputViewController {
         let context = LayoutContext(language: language, mode: mode, shift: shift,
                                     needsGlobe: needsInputModeSwitchKey,
                                     returnLabel: ret.label, returnIsAccent: ret.accent,
-                                    arabicDigits: settings.arabicDigits,
+                                    arabicDigits: settings.arabicDigits && language == .arabic,
                                     numberRow: settings.numberRow,
                                     digitHints: settings.longPressDigits && !settings.numberRow)
         let layout = LayoutFactory.make(context)
@@ -536,6 +575,9 @@ final class KeyboardViewController: UIInputViewController {
 
     private func openSettings() {
         guard settingsPanel == nil else { return }
+        if SharedStore.shared.pull().contains(.words) {
+            personal.reload()
+        }
         let panel = SettingsPanel(settings: settings, palette: palette, hasFullAccess: hasFullAccess,
                                   claude: claude, gemini: gemini, personal: personal)
         panel.translatesAutoresizingMaskIntoConstraints = false

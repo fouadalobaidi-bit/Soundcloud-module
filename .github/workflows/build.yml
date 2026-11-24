@@ -50,6 +50,13 @@ jobs:
           cp -R build/Build/Products/Release-iphoneos/Harf.app Payload/
           ls -la Payload/Harf.app/PlugIns
           plutil -p Payload/Harf.app/PlugIns/HarfKeyboard.appex/Info.plist
+          # Sign ad hoc so the IPA declares the shared keychain group; SideStore re-signs it with the user's team.
+          codesign --force --sign - --timestamp=none --entitlements Support/HarfKeyboard.entitlements Payload/Harf.app/PlugIns/HarfKeyboard.appex
+          codesign --force --sign - --timestamp=none --entitlements Support/Harf.entitlements Payload/Harf.app
+          for bundle in Payload/Harf.app/PlugIns/HarfKeyboard.appex Payload/Harf.app; do
+            echo "== $bundle"
+            codesign -d --entitlements - --xml "$bundle" 2>/dev/null | plutil -p - || codesign -d --entitlements - "$bundle"
+          done
           zip -qry Harf.ipa Payload
 
       - name: Publish IPA

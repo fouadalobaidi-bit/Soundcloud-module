@@ -2,10 +2,11 @@ import Foundation
 
 /// Learns from what the user actually types, on the phone only:
 /// how often each word is used, and which word tends to follow which.
-/// That drives completions, next-word predictions and the vocabulary hint sent to Claude.
+/// That drives completions, next-word predictions and the vocabulary hint sent to the AI.
+/// Saved through SharedStore, so the words survive installing a new version.
 @MainActor
 final class PersonalModel {
-    private let defaults = UserDefaults.standard
+    private var defaults: UserDefaults { SharedStore.shared.defaults }
     private var unigrams: [String: Int]
     private var bigrams: [String: [String: Int]]
     private var unsaved = 0
@@ -15,8 +16,16 @@ final class PersonalModel {
     private static let maxFollowers = 24
 
     init() {
+        let defaults = SharedStore.shared.defaults
         unigrams = defaults.dictionary(forKey: "pm.unigrams") as? [String: Int] ?? [:]
         bigrams = defaults.dictionary(forKey: "pm.bigrams") as? [String: [String: Int]] ?? [:]
+    }
+
+    /// Reads the words again after SharedStore brought in a newer copy (restored, or reset in the app).
+    func reload() {
+        unigrams = defaults.dictionary(forKey: "pm.unigrams") as? [String: Int] ?? [:]
+        bigrams = defaults.dictionary(forKey: "pm.bigrams") as? [String: [String: Int]] ?? [:]
+        unsaved = 0
     }
 
     static func normalize(_ word: String) -> String {
@@ -39,17 +48,23 @@ final class PersonalModel {
         if unsaved >= 5 { save() }
     }
 
+    /// Writes what was learned since the last save. Nothing new, nothing written.
     func save() {
+        guard unsaved > 0 else { return }
         prune()
         defaults.set(unigrams, forKey: "pm.unigrams")
         defaults.set(bigrams, forKey: "pm.bigrams")
         unsaved = 0
+        SharedStore.shared.wordsChanged()
     }
 
     func reset() {
         unigrams = [:]
         bigrams = [:]
-        save()
+        unsaved = 0
+        defaults.set(unigrams, forKey: "pm.unigrams")
+        defaults.set(bigrams, forKey: "pm.bigrams")
+        SharedStore.shared.push(.words, force: true)
     }
 
     /// The user knows this word (typed it at least twice), so it should not be "corrected".

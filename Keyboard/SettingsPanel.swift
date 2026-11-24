@@ -94,7 +94,7 @@ final class SettingsPanel: UIView {
         section("الكتابة")
         toggle("تصحيح تلقائي للإنكليزي", isOn: s.autocorrectEnglish) { s.autocorrectEnglish = $0 }
         toggle("تصحيح تلقائي للعربي", isOn: s.autocorrectArabic) { s.autocorrectArabic = $0 }
-        toggle("أرقام هندية (١٢٣)", isOn: s.arabicDigits) { s.arabicDigits = $0 }
+        toggle("أرقام هندية بالكيبورد العربي (١٢٣)", isOn: s.arabicDigits) { s.arabicDigits = $0 }
         learnedStatus.font = .systemFont(ofSize: 13)
         learnedStatus.textColor = palette.secondaryText
         learnedStatus.textAlignment = .right
@@ -219,7 +219,10 @@ final class SettingsPanel: UIView {
     // MARK: - Status
 
     private func updateLearnedStatus() {
-        learnedStatus.text = "الكيبورد تعلّم \(personal.wordCount) كلمة من كتابتك (محفوظة بالموبايل بس)."
+        let kept = SharedStore.shared.survivesReinstall
+            ? "محفوظة بالموبايل، وترجع وحدها إذا نصّبت نسخة جديدة"
+            : "محفوظة بالموبايل بس"
+        learnedStatus.text = "الكيبورد تعلّم \(personal.wordCount) كلمة من كتابتك (\(kept))."
     }
 
     private func updateKeyStatus() {
